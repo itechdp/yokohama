@@ -1,29 +1,26 @@
-import { useState } from "react";
-import { Outlet } from "react-router";
-import { Menu } from "lucide-react";
-import Sidebar from "@/components/sidebar";
+import { Link, Outlet, useLocation } from "react-router";
+import { Home } from "lucide-react";
 
 export default function Layout() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const location = useLocation();
+  const isHome = location.pathname === "/";
 
   return (
-    <div className="flex h-full">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Open menu"
+    <div className="flex h-full flex-col">
+      {!isHome && (
+        <header className="flex h-12 shrink-0 items-center border-b border-border bg-card px-4">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
           >
-            <Menu className="size-5" />
-          </button>
-          <span className="font-semibold text-foreground">App</span>
+            <Home className="size-4" />
+            Home
+          </Link>
         </header>
-        <main className="flex-1 overflow-y-auto">
-          <Outlet />
-        </main>
-      </div>
+      )}
+      <main className="flex-1 overflow-y-auto">
+        <Outlet />
+      </main>
     </div>
   );
 }

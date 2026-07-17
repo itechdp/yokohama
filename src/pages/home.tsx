@@ -1,8 +1,98 @@
+import { useState } from "react";
+import { Link } from "react-router";
+import { ArrowUpRight, ChevronDown, ChevronUp } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { FEATURE_ITEMS, OTHER_PAGE_ITEMS } from "@/lib/nav-items";
+
+// "Pile of used tires" by Robert Laursoo (@robineero) on Unsplash — free Unsplash License.
+const HERO_IMAGE_URL = "https://images.unsplash.com/photo-1578844251758-2f71da64c96f?auto=format&fit=crop&w=1200&q=60";
+
 export default function Home() {
+  const [showOther, setShowOther] = useState(false);
+
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-semibold text-foreground">Welcome</h1>
-      <p className="mt-2 text-muted-foreground">Edit this page to get started.</p>
+    <div className="min-h-full bg-primary/5">
+      <div
+        className="relative bg-cover bg-center px-6 pb-8 pt-6"
+        style={{
+          backgroundImage: `linear-gradient(to bottom, rgb(0 0 0 / 0.6), rgb(0 0 0 / 0.35) 65%, transparent), url('${HERO_IMAGE_URL}')`,
+        }}
+      >
+        <header className="flex h-16 items-center">
+          <span className="text-xl font-bold text-white">Yokohama</span>
+        </header>
+
+        <h1 className="text-3xl font-semibold leading-snug text-white">
+          Hi there, manage your <span className="text-warning">tyre warehouse</span> with ease —
+          Inward, Outward and beyond!
+        </h1>
+        <p className="mt-2 text-[11px] text-white/60">Photo by Robert Laursoo on Unsplash</p>
+      </div>
+
+      <div className="px-6 pb-10 pt-8">
+        <div className="grid grid-cols-4 gap-x-2 gap-y-6 sm:grid-cols-5">
+          {FEATURE_ITEMS.map(({ to, label, icon: Icon }) => (
+            <Link key={to} to={to} className="flex flex-col items-center gap-2 text-center">
+              <span className="flex size-16 items-center justify-center rounded-full bg-card shadow-sm ring-1 ring-border transition-transform active:scale-95">
+                <Icon className="size-6 text-primary" />
+              </span>
+              <span className="text-xs font-medium text-foreground">{label}</span>
+            </Link>
+          ))}
+        </div>
+
+        <Link
+          to="/tires/inward"
+          className="mt-10 flex items-center justify-between rounded-full bg-card px-6 py-4 shadow-sm"
+        >
+          <div>
+            <p className="text-sm font-semibold text-foreground">One tap away</p>
+            <p className="text-sm text-muted-foreground">Start an inward or outward move</p>
+          </div>
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <ArrowUpRight className="size-5" />
+          </span>
+        </Link>
+
+        <div className="mt-10">
+          <button
+            onClick={() => setShowOther((v) => !v)}
+            className="flex w-full items-center justify-between rounded-2xl bg-card px-5 py-4 shadow-sm"
+          >
+            <div className="text-left">
+              <p className="text-sm text-muted-foreground">More</p>
+              <p className="font-medium text-foreground">Other pages &amp; reports</p>
+            </div>
+            {showOther ? (
+              <ChevronUp className="size-5 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="size-5 text-muted-foreground" />
+            )}
+          </button>
+
+          <div
+            className={cn(
+              "grid overflow-hidden transition-all duration-200 ease-in-out",
+              showOther ? "grid-rows-[1fr] opacity-100 mt-3" : "grid-rows-[0fr] opacity-0",
+            )}
+          >
+            <div className="overflow-hidden">
+              <div className="space-y-1 rounded-2xl bg-card p-2 shadow-sm">
+                {OTHER_PAGE_ITEMS.map(({ to, label, icon: Icon }) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                  >
+                    <Icon className="size-4 text-muted-foreground" />
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
