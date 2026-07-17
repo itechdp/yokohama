@@ -1,5 +1,6 @@
 import {
   ArrowDownToLine,
+  ArrowUpFromLine,
   BarChart3,
   CirclePlus,
   Home,
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
   { to: "/tires/shipment-tracking", label: "Delivery tracking", icon: Route },
   { to: "/tires/receive", label: "Receive from production", icon: Import },
   { to: "/tires/inward", label: "Inward - Warehouse", icon: ArrowDownToLine },
+  { to: "/tires/outward", label: "Outward - Warehouse", icon: ArrowUpFromLine },
   { to: "/tires/place", label: "Place tires", icon: MapPin },
   { to: "/tires/dispatch", label: "Dispatch tires", icon: Truck },
   { to: "/tires/confirm-load", label: "Confirm truck load", icon: PackageCheck },

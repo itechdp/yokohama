@@ -9,6 +9,7 @@ import TireDispatch from "@/pages/tire-dispatch";
 import TireInward from "@/pages/tire-inward";
 import TireLocations from "@/pages/tire-locations";
 import TireNew from "@/pages/tire-new";
+import TireOutward from "@/pages/tire-outward";
 import TirePlace from "@/pages/tire-place";
 import TireProcess from "@/pages/tire-process";
 import TireReceive from "@/pages/tire-receive";
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/tires/bulk-upload" element={<TireBulkUpload />} />
         <Route path="/tires/receive" element={<TireReceive />} />
         <Route path="/tires/inward" element={<TireInward />} />
+        <Route path="/tires/outward" element={<TireOutward />} />
         <Route path="/tires/place" element={<TirePlace />} />
         <Route path="/tires/dispatch" element={<TireDispatch />} />
         <Route path="/tires/search" element={<TireSearch />} />
