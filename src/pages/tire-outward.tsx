@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowUpFromLine, Check, Warehouse as WarehouseIcon } from "lucide-react";
+import { ArrowUpFromLine, Warehouse as WarehouseIcon } from "lucide-react";
 import { readDb, writeDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import QtyStepper from "@/components/qty-stepper";
+import SuccessOverlay from "@/components/success-overlay";
 import { binForLocation, PICKED_LOCATION, WAREHOUSES } from "@/data/warehouse-bins";
 import type { StageHistory, Tire } from "@/types/tire";
 
@@ -397,11 +398,6 @@ export default function TireOutward() {
       </div>
 
       {error && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div>}
-      {success && (
-        <div className="rounded-xl bg-success-soft px-3 py-2 text-sm text-success flex items-center gap-2">
-          <Check className="size-4" /> {success}
-        </div>
-      )}
 
       <button
         onClick={handleConfirm}
@@ -417,6 +413,8 @@ export default function TireOutward() {
         </Link>{" "}
         next to assign a driver and destination.
       </p>
+
+      <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
     </div>
   );
 }
