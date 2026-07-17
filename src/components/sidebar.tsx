@@ -13,6 +13,7 @@ import {
   UploadCloud,
   Warehouse,
   Workflow,
+  X,
 } from "lucide-react";
 import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
@@ -36,29 +37,55 @@ const NAV_ITEMS = [
   { to: "/tires/bulk-upload", label: "Bulk upload tires", icon: UploadCloud },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+export default function Sidebar({ open, onClose }: SidebarProps) {
   return (
-    <aside className="w-56 shrink-0 border-r border-border bg-card flex flex-col">
-      <div className="h-14 flex items-center px-4 font-semibold text-foreground">App</div>
-      <nav className="flex-1 px-2 space-y-1">
-        {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )
-            }
+    <>
+      {open && (
+        <div onClick={onClose} className="fixed inset-0 z-40 bg-black/40 md:hidden" aria-hidden="true" />
+      )}
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-border bg-card transition-transform duration-200 ease-in-out",
+          "md:static md:z-auto md:w-56 md:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between px-4">
+          <span className="font-semibold text-foreground">App</span>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+            aria-label="Close menu"
           >
-            <Icon className="size-4" />
-            {label}
-          </NavLink>
-        ))}
-      </nav>
-    </aside>
+            <X className="size-5" />
+          </button>
+        </div>
+        <nav className="flex-1 space-y-1 overflow-y-auto px-2 pb-4">
+          {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              onClick={onClose}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )
+              }
+            >
+              <Icon className="size-4" />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+      </aside>
+    </>
   );
 }
