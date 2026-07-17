@@ -21,11 +21,10 @@ export default function TireOutward() {
   const [tires, setTires] = useState<Tire[]>([]);
 
   const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
-  const [warehouseKey, setWarehouseKey] = useState("");
+  const [warehouseKey, setWarehouseKey] = useState(WAREHOUSES[0].key);
   const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
 
   const [success, setSuccess] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const db = readDb();
@@ -119,53 +118,37 @@ export default function TireOutward() {
   };
 
   const handleConfirm = () => {
-    setError(null);
     setSuccess(null);
-
-    if (selectedGroups.length === 0) {
-      setError("Select at least one tire.");
-      return;
-    }
-    for (const g of selectedGroups) {
-      const qty = selectedQty[g.key] || 0;
-      if (qty < 1) {
-        setError(`Set a quantity for ${g.model}.`);
-        return;
-      }
-      if (qty > g.tireIds.length) {
-        setError(`Only ${g.tireIds.length} available for ${g.model}.`);
-        return;
-      }
-    }
-    if (!selectedWarehouse) {
-      setError("Select a warehouse.");
-      return;
-    }
-    if (selectedBins.size === 0) {
-      setError("Select at least one bin to pick from.");
-      return;
-    }
+    if (selectedGroups.length === 0) return;
 
     const remaining: Record<string, number> = {};
     for (const g of selectedGroups) remaining[g.key] = selectedQty[g.key] || 0;
 
-    const withdrawals: { tireId: string; bin: string; model: string }[] = [];
-    for (const bin of Array.from(selectedBins).sort()) {
-      const tiresInBin = candidates.filter((t) => binForLocation(selectedWarehouse, t.location) === bin);
-      for (const t of tiresInBin) {
-        const group = selectedGroups.find((g) => g.model === t.model);
-        if (!group) continue;
-        if ((remaining[group.key] || 0) > 0) {
+    const withdrawals: { tireId: string; bin: string | null; model: string }[] = [];
+
+    // Priority 1: pull from bins the operator actually tapped.
+    if (selectedWarehouse) {
+      for (const bin of Array.from(selectedBins).sort()) {
+        const tiresInBin = candidates.filter((t) => binForLocation(selectedWarehouse, t.location) === bin);
+        for (const t of tiresInBin) {
+          const group = selectedGroups.find((g) => g.model === t.model);
+          if (!group || (remaining[group.key] || 0) <= 0) continue;
           withdrawals.push({ tireId: t.id, bin, model: t.model });
           remaining[group.key]--;
         }
       }
     }
 
-    const shortGroups = selectedGroups.filter((g) => (remaining[g.key] || 0) > 0);
-    if (shortGroups.length > 0) {
-      setError(`Not enough stock in the selected bin(s) for ${shortGroups.map((g) => g.model).join(", ")}. Select more bins.`);
-      return;
+    // Priority 2: auto top-up the rest from wherever that tire actually sits —
+    // the quantity picker already caps at total stock, so this always succeeds.
+    const alreadyPicked = new Set(withdrawals.map((w) => w.tireId));
+    for (const g of selectedGroups) {
+      if ((remaining[g.key] || 0) <= 0) continue;
+      const more = g.tireIds.filter((id) => !alreadyPicked.has(id)).slice(0, remaining[g.key]);
+      for (const tireId of more) {
+        withdrawals.push({ tireId, bin: null, model: g.model });
+        remaining[g.key]--;
+      }
     }
 
     const db = readDb();
@@ -178,15 +161,18 @@ export default function TireOutward() {
       withdrawnIds.has(t.id) ? { ...t, location: PICKED_LOCATION, updatedAt: now } : t,
     );
 
-    const newHistory: StageHistory[] = withdrawals.map((w, idx) => ({
-      id: `h-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
-      tireId: w.tireId,
-      stage: "warehouse",
-      location: PICKED_LOCATION,
-      movedAt: now,
-      movedBy: "Forklift operator",
-      notes: `Outward: ${w.model} picked from ${selectedWarehouse.label} - Bin ${w.bin}`,
-    }));
+    const newHistory: StageHistory[] = withdrawals.map((w, idx) => {
+      const fromTire = tiresList.find((t) => t.id === w.tireId);
+      return {
+        id: `h-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+        tireId: w.tireId,
+        stage: "warehouse",
+        location: PICKED_LOCATION,
+        movedAt: now,
+        movedBy: "Forklift operator",
+        notes: `Outward: ${w.model} picked from ${fromTire?.location || "warehouse"}`,
+      };
+    });
 
     writeDb({ ...db, tires: updatedTires, tireHistory: [...historyList, ...newHistory] });
 
@@ -194,7 +180,7 @@ export default function TireOutward() {
     setSelectedQty({});
     setSelectedBins(new Set());
     setSuccess(
-      `${withdrawals.length} tire${withdrawals.length === 1 ? "" : "s"} across ${selectedGroups.length} type${selectedGroups.length === 1 ? "" : "s"} picked from ${selectedWarehouse.label}, ready for dispatch.`,
+      `${withdrawals.length} tire${withdrawals.length === 1 ? "" : "s"} across ${selectedGroups.length} type${selectedGroups.length === 1 ? "" : "s"} picked, ready for dispatch.`,
     );
   };
 
@@ -397,11 +383,10 @@ export default function TireOutward() {
         )}
       </div>
 
-      {error && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div>}
-
       <button
         onClick={handleConfirm}
-        className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+        disabled={selectedGroups.length === 0}
+        className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         OK - Confirm outward
       </button>

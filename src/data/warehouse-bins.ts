@@ -67,3 +67,12 @@ export function occupiedBins(warehouse: WarehouseDef, tires: { currentStage: str
   }
   return occupied;
 }
+
+// First empty bin in a warehouse — used to auto-place stock when the operator
+// hasn't tapped a specific bin, so confirming never blocks on a missing pick.
+export function firstEmptyBin(warehouse: WarehouseDef, occupied: Set<string>): string | null {
+  for (const bin of binsForWarehouse(warehouse)) {
+    if (!occupied.has(bin)) return bin;
+  }
+  return null;
+}

@@ -5,7 +5,7 @@ import { readDb, writeDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import QtyStepper from "@/components/qty-stepper";
 import SuccessOverlay from "@/components/success-overlay";
-import { WAREHOUSES, locationForBin, occupiedBins } from "@/data/warehouse-bins";
+import { WAREHOUSES, firstEmptyBin, locationForBin, occupiedBins } from "@/data/warehouse-bins";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
 import type { PlacementLog, StageHistory, Tire } from "@/types/tire";
 
@@ -22,11 +22,10 @@ export default function TireInward() {
   const [tires, setTires] = useState<Tire[]>([]);
 
   const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
-  const [warehouseKey, setWarehouseKey] = useState("");
+  const [warehouseKey, setWarehouseKey] = useState(WAREHOUSES[0].key);
   const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
 
   const [success, setSuccess] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const db = readDb();
@@ -89,24 +88,15 @@ export default function TireInward() {
   };
 
   const handleConfirm = () => {
-    setError(null);
     setSuccess(null);
+    if (selectedGroups.length === 0 || !selectedWarehouse) return;
 
-    if (selectedGroups.length === 0) {
-      setError("Select at least one tire.");
-      return;
-    }
-    if (!selectedWarehouse) {
-      setError("Select a warehouse.");
-      return;
-    }
-    if (selectedBins.size === 0) {
-      setError("Select at least one storage bin.");
-      return;
-    }
+    // No bin tapped — just use the next empty one so this never blocks.
+    const binsArray =
+      selectedBins.size > 0 ? Array.from(selectedBins).sort() : [firstEmptyBin(selectedWarehouse, occupied)].filter(Boolean) as string[];
+    if (binsArray.length === 0) return;
 
     const now = new Date().toISOString();
-    const binsArray = Array.from(selectedBins).sort();
     const assignments: { tireId: string; bin: string; model: string }[] = [];
     const extraTires: Tire[] = [];
     let i = 0;
@@ -377,11 +367,10 @@ export default function TireInward() {
         )}
       </div>
 
-      {error && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div>}
-
       <button
         onClick={handleConfirm}
-        className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+        disabled={selectedGroups.length === 0}
+        className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         OK - Confirm inward
       </button>
