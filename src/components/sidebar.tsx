@@ -45,13 +45,10 @@ interface SidebarProps {
 export default function Sidebar({ open, onClose }: SidebarProps) {
   return (
     <>
-      {open && (
-        <div onClick={onClose} className="fixed inset-0 z-40 bg-black/40 md:hidden" aria-hidden="true" />
-      )}
+      {open && <div onClick={onClose} className="fixed inset-0 z-40 bg-black/40" aria-hidden="true" />}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-border bg-card transition-transform duration-200 ease-in-out",
-          "md:static md:z-auto md:w-56 md:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
@@ -59,7 +56,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           <span className="font-semibold text-foreground">App</span>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="Close menu"
           >
             <X className="size-5" />

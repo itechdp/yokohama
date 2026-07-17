@@ -4,13 +4,13 @@ import { Menu } from "lucide-react";
 import Sidebar from "@/components/sidebar";
 
 export default function Layout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
     <div className="flex h-full">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4 md:hidden">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
           <button
             onClick={() => setSidebarOpen(true)}
             className="inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
