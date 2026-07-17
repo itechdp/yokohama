@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { ArrowUpRight, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronUp, Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FEATURE_ITEMS, OTHER_PAGE_ITEMS } from "@/lib/nav-items";
+import { useTheme } from "@/hooks/use-theme";
 
 // "Pile of used tires" by Robert Laursoo (@robineero) on Unsplash — free Unsplash License.
 const HERO_IMAGE_URL = "https://images.unsplash.com/photo-1578844251758-2f71da64c96f?auto=format&fit=crop&w=1200&q=60";
 
 export default function Home() {
   const [showOther, setShowOther] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <div className="min-h-full bg-primary/5">
@@ -18,10 +20,18 @@ export default function Home() {
           backgroundImage: `linear-gradient(to bottom, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.45) 65%, transparent), url('${HERO_IMAGE_URL}')`,
         }}
       >
-        <header className="flex h-16 items-center">
+        <header className="flex h-16 items-center justify-between">
           <span className="rounded-full bg-black/30 px-3 py-1 text-lg font-extrabold tracking-wide text-white drop-shadow-md backdrop-blur-sm">
             Crown Pvt. Ltd.
           </span>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            className="flex size-10 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-transform active:scale-95"
+          >
+            {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
+          </button>
         </header>
 
         <h1 className="text-3xl font-semibold leading-snug text-white">
