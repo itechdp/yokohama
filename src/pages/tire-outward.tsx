@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowUpFromLine, Check, ClipboardList, Search, Warehouse as WarehouseIcon } from "lucide-react";
+import { ArrowUpFromLine, Check, Search, Warehouse as WarehouseIcon } from "lucide-react";
 import { readDb, writeDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import { binForLocation, PICKED_LOCATION, WAREHOUSES } from "@/data/warehouse-bins";
@@ -17,7 +17,6 @@ interface TireGroup {
 
 export default function TireOutward() {
   const [tires, setTires] = useState<Tire[]>([]);
-  const [logs, setLogs] = useState<StageHistory[]>([]);
 
   const [search, setSearch] = useState("");
   const [selectedQty, setSelectedQty] = useState<Record<string, string>>({});
@@ -30,7 +29,6 @@ export default function TireOutward() {
   useEffect(() => {
     const db = readDb();
     setTires((db.tires as Tire[]) || []);
-    setLogs(((db.tireHistory as StageHistory[]) || []).filter((h) => h.notes?.startsWith("Outward:")));
   }, []);
 
   // Only tires actually sitting in a bin right now (not already picked/dispatched).
@@ -198,7 +196,6 @@ export default function TireOutward() {
     writeDb({ ...db, tires: updatedTires, tireHistory: [...historyList, ...newHistory] });
 
     setTires(updatedTires);
-    setLogs((prev) => [...newHistory, ...prev]);
     setSelectedQty({});
     setSelectedBins(new Set());
     setSuccess(
@@ -442,26 +439,6 @@ export default function TireOutward() {
         </Link>{" "}
         next to assign a driver and destination.
       </p>
-
-      {logs.length > 0 && (
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-          <h2 className="text-base font-medium text-foreground flex items-center gap-2">
-            <ClipboardList className="size-4 text-primary" />
-            Recent outward moves
-          </h2>
-          <ul className="space-y-1.5 max-h-56 overflow-y-auto">
-            {logs
-              .slice()
-              .sort((a, b) => b.movedAt.localeCompare(a.movedAt))
-              .slice(0, 10)
-              .map((h) => (
-                <li key={h.id} className="text-xs text-muted-foreground border-b border-border pb-1.5 last:border-0">
-                  {h.notes} — {new Date(h.movedAt).toLocaleString("en-IN")}
-                </li>
-              ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
