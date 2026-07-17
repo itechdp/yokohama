@@ -6,11 +6,43 @@ interface SuccessOverlayProps {
   durationMs?: number;
 }
 
+// Synthesizes a short ascending chime (no audio file needed) — the
+// "cha-ching" beat that goes with the checkmark, like a payment-success sound.
+function playSuccessChime() {
+  try {
+    const ctx = new AudioContext();
+    const now = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+
+      const start = now + i * 0.09;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.28, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.4);
+    });
+
+    setTimeout(() => ctx.close(), 900);
+  } catch {
+    // Audio isn't critical to the flow — ignore if the browser blocks/lacks it.
+  }
+}
+
 // Full-screen green flash + animated checkmark, shown right after a confirm
 // action succeeds — mirrors the "payment successful" feel of apps like GPay.
 export default function SuccessOverlay({ message, onDone, durationMs = 1800 }: SuccessOverlayProps) {
   useEffect(() => {
     if (!message) return;
+    playSuccessChime();
     const timer = setTimeout(onDone, durationMs);
     return () => clearTimeout(timer);
   }, [message, onDone, durationMs]);
