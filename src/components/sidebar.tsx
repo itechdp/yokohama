@@ -29,6 +29,7 @@ const NAV_GROUPS = [
       { to: "/tires/outward", label: "Outward - Warehouse", icon: ArrowUpFromLine },
       { to: "/tires/new", label: "Add tire", icon: CirclePlus },
       { to: "/tires/bulk-upload", label: "Bulk upload tires", icon: UploadCloud },
+      { to: "/tires/dispatch", label: "Dispatch tires", icon: Truck },
     ],
   },
   {
@@ -43,7 +44,6 @@ const NAV_GROUPS = [
       { to: "/tires/shipment-tracking", label: "Delivery tracking", icon: Route },
       { to: "/tires/receive", label: "Receive from production", icon: Import },
       { to: "/tires/place", label: "Place tires", icon: MapPin },
-      { to: "/tires/dispatch", label: "Dispatch tires", icon: Truck },
       { to: "/tires/confirm-load", label: "Confirm truck load", icon: PackageCheck },
     ],
   },

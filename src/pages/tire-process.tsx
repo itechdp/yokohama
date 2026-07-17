@@ -608,6 +608,8 @@ function DispatchSubTimeline({
 function StatusChip({ status }: { status: DispatchStatus }) {
   const base = "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium border";
   const styles: Record<DispatchStatus, string> = {
+    "holding-bay": "border-muted-foreground bg-muted text-muted-foreground",
+    loading: "border-warning bg-warning-soft text-warning",
     "picked-up": "border-info bg-info-soft text-info",
     loaded: "border-info bg-info-soft text-info",
     "in-transit": "border-info bg-info-soft text-info",

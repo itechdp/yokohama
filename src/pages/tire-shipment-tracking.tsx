@@ -564,6 +564,8 @@ function StatCard({
 function StatusBadge({ status }: { status: DispatchStatus }) {
   const base = "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium";
   const styles: Record<DispatchStatus, string> = {
+    "holding-bay": "bg-muted text-muted-foreground",
+    loading: "bg-warning-soft text-warning",
     "picked-up": "bg-info-soft text-info",
     loaded: "bg-info-soft text-info",
     "in-transit": "bg-info-soft text-info",

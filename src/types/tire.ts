@@ -9,6 +9,8 @@ export type TireStage =
   | "scrapped";
 
 export type DispatchStatus =
+  | "holding-bay"
+  | "loading"
   | "picked-up"
   | "loaded"
   | "in-transit"
@@ -58,12 +60,28 @@ export interface PlacementLog {
 export interface TireDispatch {
   id: string;
   tireId: string;
+  planId?: string;
   driverName: string;
   destination: string;
   dispatchedAt: string;
   dispatchedBy: string;
   status: DispatchStatus;
   notes: string;
+}
+
+// One truck/destination/driver. Tyres get added to a plan, each tracked
+// individually (Holding in Bay -> Loading onto Truck -> Loaded onto Truck)
+// before the truck itself is marked dispatched.
+export interface DispatchPlan {
+  id: string;
+  driverName: string;
+  destination: string;
+  truckNumber: string;
+  createdAt: string;
+  createdBy: string;
+  notes: string;
+  status: "open" | "dispatched";
+  dispatchedAt?: string;
 }
 
 export interface ShipmentTrackingUpdate {
@@ -121,8 +139,10 @@ export const NEXT_STAGE: Record<TireStage, TireStage | null> = {
 };
 
 export const DISPATCH_STATUS_LABELS: Record<DispatchStatus, string> = {
+  "holding-bay": "Holding in Bay",
+  loading: "Loading onto Truck",
+  loaded: "Loaded onto Truck",
   "picked-up": "Picked up",
-  loaded: "Loaded on truck",
   "in-transit": "In transit",
   "at-hub": "At hub",
   "out-for-delivery": "Out for delivery",
@@ -132,8 +152,10 @@ export const DISPATCH_STATUS_LABELS: Record<DispatchStatus, string> = {
 };
 
 export const DISPATCH_STATUS_ORDER: DispatchStatus[] = [
-  "picked-up",
+  "holding-bay",
+  "loading",
   "loaded",
+  "picked-up",
   "in-transit",
   "at-hub",
   "out-for-delivery",
@@ -141,11 +163,13 @@ export const DISPATCH_STATUS_ORDER: DispatchStatus[] = [
 ];
 
 export const DELIVERY_PROGRESS: Record<DispatchStatus, number> = {
-  "picked-up": 10,
-  loaded: 25,
-  "in-transit": 45,
-  "at-hub": 60,
-  "out-for-delivery": 80,
+  "holding-bay": 5,
+  loading: 12,
+  loaded: 20,
+  "picked-up": 30,
+  "in-transit": 50,
+  "at-hub": 65,
+  "out-for-delivery": 85,
   delivered: 100,
   delayed: 0,
   returned: 0,

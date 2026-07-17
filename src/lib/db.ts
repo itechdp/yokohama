@@ -1,4 +1,4 @@
-import type { Tire, StageHistory, PlacementLog, TireDispatch, ShipmentTrackingUpdate, TruckLoadConfirmation } from "@/types/tire";
+import type { Tire, StageHistory, PlacementLog, TireDispatch, DispatchPlan, ShipmentTrackingUpdate, TruckLoadConfirmation } from "@/types/tire";
 import { buildTireFromCatalogRow, parseCatalogText } from "@/lib/tire-catalog";
 
 const DB_KEY = "app-db-v2";
@@ -30,6 +30,7 @@ const SEED: Record<string, unknown> = {
   tireHistory: seedHistory(),
   placementLogs: seedPlacementLogs(),
   dispatchLogs: seedDispatchLogs(),
+  dispatchPlans: seedDispatchPlans(),
   shipmentTrackingUpdates: seedShipmentTrackingUpdates(),
   truckLoadConfirmations: seedTruckLoadConfirmations(),
 };
@@ -48,6 +49,10 @@ function seedPlacementLogs(): PlacementLog[] {
 }
 
 function seedDispatchLogs(): TireDispatch[] {
+  return [];
+}
+
+function seedDispatchPlans(): DispatchPlan[] {
   return [];
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowDownToLine, Check, ClipboardList, Search, Warehouse as WarehouseIcon } from "lucide-react";
+import { ArrowDownToLine, Check, Search, Warehouse as WarehouseIcon } from "lucide-react";
 import { readDb, writeDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import { WAREHOUSES, locationForBin, occupiedBins } from "@/data/warehouse-bins";
