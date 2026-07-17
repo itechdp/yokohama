@@ -340,9 +340,10 @@ export default function TireInward() {
                                 onClick={() => toggleBin(code)}
                                 title={isFull ? `${code} — full` : code}
                                 className={cn(
-                                  "flex h-8 w-12 items-center justify-center rounded text-[9px] font-medium leading-none text-white/90 transition-colors",
-                                  isFull ? "bg-danger/70 cursor-not-allowed" : "bg-info/70 hover:bg-info",
-                                  isSelected && !isFull && "ring-2 ring-primary ring-offset-1",
+                                  "flex h-8 w-12 items-center justify-center rounded text-[9px] font-bold leading-none text-white transition-colors",
+                                  isFull && "bg-danger/70 cursor-not-allowed",
+                                  !isFull && !isSelected && "bg-info/70 hover:bg-info",
+                                  isSelected && !isFull && "bg-success ring-2 ring-success ring-offset-1",
                                 )}
                               >
                                 {String(col).padStart(2, "0")}-{String(row).padStart(2, "0")}
