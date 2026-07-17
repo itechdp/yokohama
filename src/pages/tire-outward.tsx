@@ -195,7 +195,7 @@ export default function TireOutward() {
           <p className="text-muted-foreground">Tap to find a tire, pick quantities and bins to pull from.</p>
         </div>
         <Link
-          to="/tires"
+          to="/"
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors shrink-0"
         >
           Back
