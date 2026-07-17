@@ -15,11 +15,13 @@ export default function Home() {
       <div
         className="relative bg-cover bg-center px-6 pb-8 pt-6"
         style={{
-          backgroundImage: `linear-gradient(to bottom, rgb(0 0 0 / 0.6), rgb(0 0 0 / 0.35) 65%, transparent), url('${HERO_IMAGE_URL}')`,
+          backgroundImage: `linear-gradient(to bottom, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.45) 65%, transparent), url('${HERO_IMAGE_URL}')`,
         }}
       >
         <header className="flex h-16 items-center">
-          <span className="text-xl font-bold text-white">Yokohama</span>
+          <span className="rounded-full bg-black/30 px-3 py-1 text-lg font-extrabold tracking-wide text-white drop-shadow-md backdrop-blur-sm">
+            Crown Pvt. Ltd.
+          </span>
         </header>
 
         <h1 className="text-3xl font-semibold leading-snug text-white">
