@@ -30,29 +30,29 @@ export default function Home() {
       </div>
 
       <div className="px-6 pb-10 pt-8">
-        <div className="grid grid-cols-4 gap-x-2 gap-y-6 sm:grid-cols-5">
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-6">
           {FEATURE_ITEMS.map(({ to, label, icon: Icon }) => (
-            <Link key={to} to={to} className="flex flex-col items-center gap-2 text-center">
+            <Link key={to} to={to} className="flex w-16 flex-col items-center gap-2 text-center">
               <span className="flex size-16 items-center justify-center rounded-full bg-card shadow-sm ring-1 ring-border transition-transform active:scale-95">
                 <Icon className="size-6 text-primary" />
               </span>
               <span className="text-xs font-medium text-foreground">{label}</span>
             </Link>
           ))}
-        </div>
 
-        <Link
-          to="/tires/inward"
-          className="mt-10 flex items-center justify-between rounded-full bg-card px-6 py-4 shadow-sm"
-        >
-          <div>
-            <p className="text-sm font-semibold text-foreground">One tap away</p>
-            <p className="text-sm text-muted-foreground">Start an inward or outward move</p>
-          </div>
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <ArrowUpRight className="size-5" />
-          </span>
-        </Link>
+          <Link
+            to="/tires/inward"
+            className="flex min-w-[200px] flex-1 items-center justify-between gap-3 rounded-full bg-card px-5 py-3 shadow-sm"
+          >
+            <div>
+              <p className="text-sm font-semibold text-foreground">One tap away</p>
+              <p className="text-xs text-muted-foreground">Start an inward or outward move</p>
+            </div>
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <ArrowUpRight className="size-4" />
+            </span>
+          </Link>
+        </div>
 
         <div className="mt-10">
           <button
