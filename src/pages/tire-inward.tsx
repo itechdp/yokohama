@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowDownToLine, Check, Search, Warehouse as WarehouseIcon } from "lucide-react";
+import { ArrowDownToLine, Check, Warehouse as WarehouseIcon } from "lucide-react";
 import { readDb, writeDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
+import QtyStepper from "@/components/qty-stepper";
 import { WAREHOUSES, locationForBin, occupiedBins } from "@/data/warehouse-bins";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
 import type { PlacementLog, StageHistory, Tire } from "@/types/tire";
@@ -19,8 +20,7 @@ interface TireGroup {
 export default function TireInward() {
   const [tires, setTires] = useState<Tire[]>([]);
 
-  const [search, setSearch] = useState("");
-  const [selectedQty, setSelectedQty] = useState<Record<string, string>>({});
+  const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
   const [warehouseKey, setWarehouseKey] = useState("");
   const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
 
@@ -55,26 +55,20 @@ export default function TireInward() {
     return Array.from(map.values()).sort((a, b) => a.model.localeCompare(b.model));
   }, [candidates]);
 
-  const filteredGroups = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return groups;
-    return groups.filter((g) => [g.model, g.material, g.brand, g.plyRatingBottom].some((v) => v?.toLowerCase().includes(q)));
-  }, [groups, search]);
-
   const selectedGroups = useMemo(() => groups.filter((g) => g.key in selectedQty), [groups, selectedQty]);
-  const totalQty = selectedGroups.reduce((sum, g) => sum + (Number.parseInt(selectedQty[g.key] || "0", 10) || 0), 0);
+  const totalQty = selectedGroups.reduce((sum, g) => sum + (selectedQty[g.key] || 0), 0);
 
   const toggleGroup = (key: string) => {
     setSelectedQty((prev) => {
       const next = { ...prev };
       if (key in next) delete next[key];
-      else next[key] = "1";
+      else next[key] = 1;
       return next;
     });
   };
 
-  const updateQty = (key: string, value: string) => {
-    setSelectedQty((prev) => ({ ...prev, [key]: value.replace(/\D/g, "") }));
+  const setQty = (key: string, value: number) => {
+    setSelectedQty((prev) => ({ ...prev, [key]: value }));
   };
 
   const selectedWarehouse = WAREHOUSES.find((w) => w.key === warehouseKey) || null;
@@ -101,13 +95,6 @@ export default function TireInward() {
       setError("Select at least one tire.");
       return;
     }
-    for (const g of selectedGroups) {
-      const qty = Number.parseInt(selectedQty[g.key] || "0", 10);
-      if (Number.isNaN(qty) || qty < 1) {
-        setError(`Enter a valid quantity for ${g.model}.`);
-        return;
-      }
-    }
     if (!selectedWarehouse) {
       setError("Select a warehouse.");
       return;
@@ -123,7 +110,7 @@ export default function TireInward() {
     const extraTires: Tire[] = [];
     let i = 0;
     for (const g of selectedGroups) {
-      const qty = Number.parseInt(selectedQty[g.key] || "0", 10);
+      const qty = selectedQty[g.key] || 0;
       const existingIds = g.tireIds.slice(0, qty);
       for (const tireId of existingIds) {
         assignments.push({ tireId, bin: binsArray[i % binsArray.length], model: g.model });
@@ -213,7 +200,7 @@ export default function TireInward() {
             <ArrowDownToLine className="size-6 text-primary" />
             Inward - Warehouse
           </h1>
-          <p className="text-muted-foreground">Select tires, quantities, and bin locations.</p>
+          <p className="text-muted-foreground">Tap to select tires, quantities, and bin locations.</p>
         </div>
         <Link
           to="/tires"
@@ -225,40 +212,31 @@ export default function TireInward() {
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">1. Select tires</h2>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by model, material, or brand"
-            className="w-full rounded-xl border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-        </div>
 
-        {filteredGroups.length === 0 ? (
+        {groups.length === 0 ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
-            {groups.length === 0 ? "No tires waiting in production." : "No matches."}
+            No tires waiting in production.
           </div>
         ) : (
-          <ul className="space-y-2 max-h-80 overflow-y-auto">
-            {filteredGroups.map((g) => {
+          <ul className="space-y-2 max-h-96 overflow-y-auto">
+            {groups.map((g) => {
               const isSelected = g.key in selectedQty;
               return (
                 <li
                   key={g.key}
+                  onClick={() => toggleGroup(g.key)}
                   className={cn(
-                    "rounded-xl border px-4 py-3 text-sm transition-colors",
-                    isSelected ? "border-primary bg-primary/5" : "border-border bg-card",
+                    "rounded-xl border px-4 py-3 text-sm transition-colors cursor-pointer",
+                    isSelected ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-muted",
                   )}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <label className="flex flex-1 items-center gap-3 cursor-pointer">
+                    <div className="flex flex-1 items-center gap-3">
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        onChange={() => toggleGroup(g.key)}
-                        className="size-4 rounded border-border text-primary focus:ring-ring"
+                        readOnly
+                        className="size-5 rounded border-border text-primary focus:ring-ring pointer-events-none"
                       />
                       <div>
                         <p className="font-medium text-foreground">{g.model}</p>
@@ -266,20 +244,14 @@ export default function TireInward() {
                           {[g.material, g.brand, g.plyRatingBottom].filter(Boolean).join(" · ")}
                         </p>
                       </div>
-                    </label>
+                    </div>
                     <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary shrink-0">
                       {g.tireIds.length} available
                     </span>
                   </div>
                   {isSelected && (
-                    <div className="mt-2 pl-7">
-                      <input
-                        type="number"
-                        min={1}
-                        value={selectedQty[g.key]}
-                        onChange={(e) => updateQty(g.key, e.target.value)}
-                        className="w-28 rounded-lg border border-border bg-card px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                      />
+                    <div className="mt-3 pl-8" onClick={(e) => e.stopPropagation()}>
+                      <QtyStepper value={selectedQty[g.key]} onChange={(v) => setQty(g.key, v)} />
                     </div>
                   )}
                 </li>
