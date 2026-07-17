@@ -18,7 +18,6 @@ interface TireGroup {
 
 export default function TireInward() {
   const [tires, setTires] = useState<Tire[]>([]);
-  const [logs, setLogs] = useState<StageHistory[]>([]);
 
   const [search, setSearch] = useState("");
   const [selectedQty, setSelectedQty] = useState<Record<string, string>>({});
