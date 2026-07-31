@@ -95,15 +95,6 @@ export interface ShipmentTrackingUpdate {
   notes: string;
 }
 
-export interface TruckLoadConfirmation {
-  id: string;
-  size: string;
-  tireIds: string[];
-  dispatchIds: string[];
-  confirmedAt: string;
-  confirmedBy: string;
-  notes: string;
-}
 
 export const STAGE_LABELS: Record<TireStage, string> = {
   production: "Production",

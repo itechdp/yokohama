@@ -36,30 +36,37 @@ export function parseCatalogText(text: string): CatalogRow[] {
   return rows;
 }
 
-// Reads the first sheet of an uploaded .xlsx/.xls/.csv file. Expects columns in
-// the order Material, Tire Description-Brand, Ply Rating Bottom, Brand (a header
-// row matching that is optional and gets skipped automatically).
+// Reads every sheet of an uploaded .xlsx/.xls/.csv file (workbooks with
+// multiple tabs are common — e.g. a spreadsheet split across "Sheet1" /
+// "Sheet2" — and rows on any tab but the first used to get silently dropped).
+// Expects columns in the order Material, Tire Description-Brand, Ply Rating
+// Bottom, Brand on each sheet (a header row matching that is optional and
+// gets skipped automatically, per sheet).
 export function parseCatalogWorkbook(data: ArrayBuffer): CatalogRow[] {
   const workbook = XLSX.read(data, { type: "array" });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  if (!sheet) return [];
-
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, blankrows: false, defval: "" });
-  if (rows.length === 0) return [];
-
-  const firstCell = String(rows[0][0] ?? "").trim();
-  const startIndex = HEADER_WORDS.test(firstCell) ? 1 : 0;
-
   const result: CatalogRow[] = [];
-  for (let i = startIndex; i < rows.length; i++) {
-    const r = rows[i];
-    const material = String(r[0] ?? "").trim();
-    const description = String(r[1] ?? "").trim();
-    const plyRatingBottom = String(r[2] ?? "").trim();
-    const brand = String(r[3] ?? "").trim();
-    if (!material || !description) continue;
-    result.push({ material, description, plyRatingBottom, brand });
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) continue;
+
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, blankrows: false, defval: "" });
+    if (rows.length === 0) continue;
+
+    const firstCell = String(rows[0][0] ?? "").trim();
+    const startIndex = HEADER_WORDS.test(firstCell) ? 1 : 0;
+
+    for (let i = startIndex; i < rows.length; i++) {
+      const r = rows[i];
+      const material = String(r[0] ?? "").trim();
+      const description = String(r[1] ?? "").trim();
+      const plyRatingBottom = String(r[2] ?? "").trim();
+      const brand = String(r[3] ?? "").trim();
+      if (!material || !description) continue;
+      result.push({ material, description, plyRatingBottom, brand });
+    }
   }
+
   return result;
 }
 

@@ -165,10 +165,10 @@ function PlanList({
           </p>
         </div>
         <Link
-          to="/tires"
+          to="/"
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
         >
-          Back to inventory
+          Back to home
         </Link>
       </div>
 
@@ -734,18 +734,6 @@ function PlanDetail({
           </div>
         )}
       </div>
-
-      <p className="text-xs text-muted-foreground">
-        Once tires are loaded, use{" "}
-        <Link to="/tires/confirm-load" className="underline">
-          Confirm truck load
-        </Link>{" "}
-        or{" "}
-        <Link to="/tires/shipment-tracking" className="underline">
-          Delivery tracking
-        </Link>{" "}
-        to progress them further (picked up, in transit, delivered).
-      </p>
     </div>
   );
 }

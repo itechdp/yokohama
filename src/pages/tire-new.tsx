@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Save, UploadCloud } from "lucide-react";
 import { readDb, writeDb } from "@/lib/db";
+import { searchTireSkus, upsertTireSkus } from "@/lib/tire-skus";
+import type { TireSkuRow } from "@/lib/supabase";
 import type { Tire, TireStage } from "@/types/tire";
 
 export default function TireNew() {
@@ -12,8 +14,36 @@ export default function TireNew() {
     plyRatingBottom: "",
     brand: "",
   });
+  const [suggestions, setSuggestions] = useState<TireSkuRow[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionsRequestId = useRef(0);
 
   const update = (key: keyof typeof form, value: string) => setForm((f) => ({ ...f, [key]: value }));
+
+  useEffect(() => {
+    const query = form.material.trim();
+    if (!query) {
+      setSuggestions([]);
+      return;
+    }
+    const requestId = ++suggestionsRequestId.current;
+    const timeout = setTimeout(() => {
+      searchTireSkus(query).then((rows) => {
+        if (suggestionsRequestId.current === requestId) setSuggestions(rows);
+      });
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [form.material]);
+
+  const selectSuggestion = (row: TireSkuRow) => {
+    setForm({
+      material: row.material,
+      tireDescriptionBrand: row.description,
+      plyRatingBottom: row.ply_rating_bottom ?? "",
+      brand: row.brand ?? "",
+    });
+    setShowSuggestions(false);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,10 +52,13 @@ export default function TireNew() {
     const now = new Date().toISOString();
     const id = `t-${Date.now()}`;
 
+    const material = form.material.trim();
+    const description = form.tireDescriptionBrand.trim() || "Unknown model";
+
     const newTire: Tire = {
       id,
-      serialNumber: form.material.trim() || id,
-      model: form.tireDescriptionBrand.trim() || "Unknown model",
+      serialNumber: material || id,
+      model: description,
       size: "Unknown size",
       productionDate: now.split("T")[0],
       currentStage: "production" as TireStage,
@@ -41,7 +74,19 @@ export default function TireNew() {
     };
 
     writeDb({ ...db, tires: [...tires, newTire] });
-    navigate("/tires");
+
+    if (material) {
+      upsertTireSkus([
+        {
+          material,
+          description,
+          plyRatingBottom: form.plyRatingBottom.trim(),
+          brand: form.brand.trim(),
+        },
+      ]);
+    }
+
+    navigate("/");
   };
 
   return (
@@ -69,7 +114,39 @@ export default function TireNew() {
 
       <form onSubmit={handleSubmit} className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Material" value={form.material} onChange={(v) => update("material", v)} required />
+          <div className="relative space-y-1">
+            <label className="text-sm font-medium text-foreground">Material</label>
+            <input
+              type="text"
+              value={form.material}
+              onChange={(e) => {
+                update("material", e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              required
+              autoComplete="off"
+              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            {showSuggestions && suggestions.length > 0 && (
+              <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
+                {suggestions.map((row) => (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => selectSuggestion(row)}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+                    >
+                      <div className="font-medium text-foreground">{row.material}</div>
+                      <div className="text-xs text-muted-foreground truncate">{row.description}</div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <Field
             label="Tire Description-Brand"
             value={form.tireDescriptionBrand}

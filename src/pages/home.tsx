@@ -1,15 +1,12 @@
-import { useState } from "react";
 import { Link } from "react-router";
-import { ArrowUpRight, ChevronDown, ChevronUp, Moon, Sun } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { FEATURE_ITEMS, OTHER_PAGE_ITEMS } from "@/lib/nav-items";
+import { ArrowUpRight, Moon, Sun } from "lucide-react";
+import { FEATURE_ITEMS } from "@/lib/nav-items";
 import { useTheme } from "@/hooks/use-theme";
 
 // "Pile of used tires" by Robert Laursoo (@robineero) on Unsplash — free Unsplash License.
 const HERO_IMAGE_URL = "https://images.unsplash.com/photo-1578844251758-2f71da64c96f?auto=format&fit=crop&w=1200&q=60";
 
 export default function Home() {
-  const [showOther, setShowOther] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -64,45 +61,6 @@ export default function Home() {
               <ArrowUpRight className="size-4" />
             </span>
           </Link>
-        </div>
-
-        <div className="mt-10">
-          <button
-            onClick={() => setShowOther((v) => !v)}
-            className="flex w-full items-center justify-between rounded-2xl bg-card px-5 py-4 shadow-sm"
-          >
-            <div className="text-left">
-              <p className="text-sm text-muted-foreground">More</p>
-              <p className="font-medium text-foreground">Other pages &amp; reports</p>
-            </div>
-            {showOther ? (
-              <ChevronUp className="size-5 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="size-5 text-muted-foreground" />
-            )}
-          </button>
-
-          <div
-            className={cn(
-              "grid overflow-hidden transition-all duration-200 ease-in-out",
-              showOther ? "grid-rows-[1fr] opacity-100 mt-3" : "grid-rows-[0fr] opacity-0",
-            )}
-          >
-            <div className="overflow-hidden">
-              <div className="space-y-1 rounded-2xl bg-card p-2 shadow-sm">
-                {OTHER_PAGE_ITEMS.map(({ to, label, icon: Icon }) => (
-                  <Link
-                    key={to}
-                    to={to}
-                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                  >
-                    <Icon className="size-4 text-muted-foreground" />
-                    {label}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
