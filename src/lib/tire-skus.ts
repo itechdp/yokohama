@@ -1,19 +1,40 @@
 import { supabase, type TireSkuRow } from "@/lib/supabase";
 import type { CatalogRow } from "@/lib/tire-catalog";
 
-// Full (capped) list of SKUs for the "Show tire" catalog page.
-export async function listTireSkus(limit = 500): Promise<TireSkuRow[]> {
-  const { data, error } = await supabase
-    .from("tire_skus")
-    .select("*")
-    .order("material", { ascending: true })
-    .limit(limit);
+export interface TireSkuPage {
+  rows: TireSkuRow[];
+  count: number;
+}
 
-  if (error) {
-    console.warn("tire_skus list failed:", error.message);
-    return [];
+// One page of the "Show tire" catalog, optionally filtered by material/description.
+// Server-side paginated (via Supabase .range()) since the table can hold thousands
+// of rows — nothing paginated client-side would scale to that.
+export async function fetchTireSkusPage(params: {
+  query?: string;
+  page: number;
+  pageSize: number;
+}): Promise<TireSkuPage> {
+  const { query, page, pageSize } = params;
+  const from = page * pageSize;
+  const to = from + pageSize - 1;
+
+  let request = supabase
+    .from("tire_skus")
+    .select("*", { count: "exact" })
+    .order("material", { ascending: true })
+    .range(from, to);
+
+  const q = query?.trim();
+  if (q) {
+    request = request.or(`material.ilike.%${q}%,description.ilike.%${q}%`);
   }
-  return data ?? [];
+
+  const { data, error, count } = await request;
+  if (error) {
+    console.warn("tire_skus page fetch failed:", error.message);
+    return { rows: [], count: 0 };
+  }
+  return { rows: data ?? [], count: count ?? 0 };
 }
 
 // Looks up SKUs by material/description for the Add Tire autocomplete.
