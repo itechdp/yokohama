@@ -1,5 +1,6 @@
 import { Route, Routes } from "react-router";
 import Layout from "@/components/layout";
+import BayBooking from "@/pages/bay-booking";
 import Home from "@/pages/home";
 import TireBulkUpload from "@/pages/tire-bulk-upload";
 import TireDispatch from "@/pages/tire-dispatch";
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/tires/inward" element={<TireInward />} />
         <Route path="/tires/outward" element={<TireOutward />} />
         <Route path="/tires/dispatch" element={<TireDispatch />} />
+        <Route path="/bays" element={<BayBooking />} />
       </Route>
     </Routes>
   );

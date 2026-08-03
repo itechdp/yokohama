@@ -67,7 +67,7 @@ export default function QtyStepper({ value, onChange, min = 1, max }: QtyStepper
               setEditing(false);
             }
           }}
-          className="w-12 rounded-lg border border-border bg-card text-center text-base font-semibold text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="w-12 rounded-lg border border-border bg-card text-center text-base font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
       ) : (
         <button
