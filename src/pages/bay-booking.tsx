@@ -1,41 +1,38 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ChevronDown, Filter, LayoutGrid, Search } from "lucide-react";
-import { readDb, writeDb } from "@/lib/db";
+import { fetchBayBookings, upsertBayBooking } from "@/lib/bay-bookings";
 import { fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
 import type { TireSkuRow } from "@/lib/supabase";
-import QtyStepper from "@/components/qty-stepper";
 import { cn } from "@/lib/utils";
 import { BAY_COUNT, BAY_STATUS_LABELS, type BayBooking, type BayStatus } from "@/types/tire";
-
-const STATUS_CARD_STYLES: Record<BayStatus, string> = {
-  closed: "border-success/30 bg-success-soft",
-  running: "border-warning/30 bg-warning-soft",
-  hold: "border-danger/30 bg-danger-soft",
-};
 
 const STATUS_PILL_STYLES: Record<BayStatus, string> = {
   closed: "bg-success text-white",
   running: "bg-warning text-white",
   hold: "bg-danger text-white",
+  "qc-pending": "bg-info text-white",
 };
 
 const STATUS_DOT_STYLES: Record<BayStatus, string> = {
   closed: "bg-success",
   running: "bg-warning",
   hold: "bg-danger",
+  "qc-pending": "bg-info",
 };
 
 const STATUS_ROW_STYLES: Record<BayStatus, string> = {
   closed: "hover:bg-success-soft",
   running: "hover:bg-warning-soft",
   hold: "hover:bg-danger-soft",
+  "qc-pending": "hover:bg-info-soft",
 };
 
 const STATUS_FILTER_STYLES: Record<BayStatus, string> = {
   closed: "bg-success text-white",
   running: "bg-warning text-white",
   hold: "bg-danger text-white",
+  "qc-pending": "bg-info text-white",
 };
 
 type StatusFilter = BayStatus | "all";
@@ -48,24 +45,24 @@ export default function BayBooking() {
   const [rows, setRows] = useState<BayBooking[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const saveTimeouts = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
-    const db = readDb();
-    const saved: BayBooking[] = db.bayBookings || [];
-    const byBay = new Map(saved.map((r) => [r.bay, r]));
-    const filled = Array.from({ length: BAY_COUNT }, (_, i) => {
-      const row = byBay.get(i + 1) || emptyRow(i + 1);
-      const qty = Number(row.qty);
-      return { ...row, qty: Number.isFinite(qty) ? qty : 0 };
+    fetchBayBookings().then((saved) => {
+      const byBay = new Map(saved.map((r) => [r.bay, r]));
+      const filled = Array.from({ length: BAY_COUNT }, (_, i) => byBay.get(i + 1) || emptyRow(i + 1));
+      setRows(filled);
     });
-    setRows(filled);
   }, []);
 
   const updateRow = (bay: number, patch: Partial<BayBooking>) => {
     setRows((prev) => {
       const next = prev.map((r) => (r.bay === bay ? { ...r, ...patch, updatedAt: new Date().toISOString() } : r));
-      const db = readDb();
-      writeDb({ ...db, bayBookings: next });
+      const updatedRow = next.find((r) => r.bay === bay);
+      if (updatedRow) {
+        clearTimeout(saveTimeouts.current[bay]);
+        saveTimeouts.current[bay] = setTimeout(() => upsertBayBooking(updatedRow), 400);
+      }
       return next;
     });
   };
@@ -120,10 +117,74 @@ export default function BayBooking() {
           No bays match your search.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredRows.map((row) => (
-            <BayCard key={row.bay} row={row} onChange={(patch) => updateRow(row.bay, patch)} />
-          ))}
+        <div className="border border-border">
+          <table className="w-full table-fixed border-collapse text-xs">
+            <colgroup>
+              <col className="w-8" />
+              <col />
+              <col className="w-[22%]" />
+              <col className="w-[24%]" />
+              <col className="w-11" />
+            </colgroup>
+            <thead>
+              <tr className="bg-muted">
+                <th className="border border-border px-1 py-1.5 text-center font-medium text-muted-foreground">
+                  Bay
+                </th>
+                <th className="border border-border px-1.5 py-1.5 text-left font-medium text-muted-foreground">
+                  Tire
+                </th>
+                <th className="border border-border px-1.5 py-1.5 text-left font-medium text-muted-foreground">
+                  Plan
+                </th>
+                <th className="border border-border px-1.5 py-1.5 text-left font-medium text-muted-foreground">
+                  Status
+                </th>
+                <th className="border border-border px-1 py-1.5 text-center font-medium text-muted-foreground">
+                  Qty
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map((row) => (
+                <tr key={row.bay} className="bg-card even:bg-muted/30 hover:bg-muted/50 transition-colors">
+                  <td className="border border-border px-1 py-1 text-center font-semibold text-foreground">
+                    {row.bay}
+                  </td>
+                  <td className="border border-border p-0">
+                    <PendingTireCell
+                      value={row.pendingTire}
+                      onChange={(pendingTire) => updateRow(row.bay, { pendingTire })}
+                    />
+                  </td>
+                  <td className="border border-border p-0">
+                    <input
+                      type="text"
+                      value={row.planNo}
+                      onChange={(e) => updateRow(row.bay, { planNo: e.target.value })}
+                      placeholder="—"
+                      className="w-full bg-transparent px-1.5 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
+                    />
+                  </td>
+                  <td className="border border-border p-1">
+                    <StatusDropdown value={row.status} onChange={(status) => updateRow(row.bay, { status })} />
+                  </td>
+                  <td className="border border-border p-0">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={row.qty === 0 ? "" : row.qty}
+                      onChange={(e) =>
+                        updateRow(row.bay, { qty: e.target.value === "" ? 0 : Number(e.target.value.replace(/\D/g, "")) || 0 })
+                      }
+                      placeholder="0"
+                      className="w-full bg-transparent px-1 py-1.5 text-center text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -134,18 +195,18 @@ function StatusDropdown({ value, onChange }: { value: BayStatus; onChange: (stat
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="relative">
+    <div className="relative w-full">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium focus:outline-none",
+          "inline-flex w-full items-center justify-center gap-1 rounded-lg px-1 py-1.5 text-[11px] font-medium focus:outline-none",
           STATUS_PILL_STYLES[value],
         )}
       >
-        {BAY_STATUS_LABELS[value]}
-        <ChevronDown className="size-3.5" />
+        <span className="truncate">{BAY_STATUS_LABELS[value]}</span>
+        <ChevronDown className="size-3 shrink-0" />
       </button>
       {open && (
         <ul className="absolute right-0 z-20 mt-1 w-32 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-lg">
@@ -228,13 +289,13 @@ function FilterDropdown({ value, onChange }: { value: StatusFilter; onChange: (s
   );
 }
 
-function BayCard({ row, onChange }: { row: BayBooking; onChange: (patch: Partial<BayBooking>) => void }) {
+function PendingTireCell({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [suggestions, setSuggestions] = useState<TireSkuRow[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const requestId = useRef(0);
 
   useEffect(() => {
-    const query = row.pendingTire.trim();
+    const query = value.trim();
     const id = ++requestId.current;
     const timeout = setTimeout(() => {
       const request = query
@@ -245,82 +306,54 @@ function BayCard({ row, onChange }: { row: BayBooking; onChange: (patch: Partial
       });
     }, 250);
     return () => clearTimeout(timeout);
-  }, [row.pendingTire]);
+  }, [value]);
 
   return (
-    <div className={cn("rounded-2xl border p-4 shadow-sm space-y-3", STATUS_CARD_STYLES[row.status])}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex size-9 items-center justify-center rounded-full bg-card font-semibold text-foreground shadow-sm">
-          {row.bay}
-        </span>
-        <StatusDropdown value={row.status} onChange={(status) => onChange({ status })} />
-      </div>
-
-      <div className="relative space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Pending Tire</label>
-        <div className="relative">
-          <input
-            type="text"
-            value={row.pendingTire}
-            onChange={(e) => {
-              onChange({ pendingTire: e.target.value });
-              setShowSuggestions(true);
-            }}
-            onFocus={() => setShowSuggestions(true)}
-            onClick={() => setShowSuggestions(true)}
-            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-            placeholder="Search tire model"
-            autoComplete="off"
-            className="w-full rounded-lg border border-border bg-card px-3 py-1.5 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          <button
-            type="button"
-            tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => setShowSuggestions((s) => !s)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-            aria-label="Show tire options"
-          >
-            <ChevronDown className="size-4" />
-          </button>
-        </div>
-        {showSuggestions && suggestions.length > 0 && (
-          <ul className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
-            {suggestions.map((sku) => (
-              <li key={sku.id}>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    onChange({ pendingTire: sku.material });
-                    setShowSuggestions(false);
-                  }}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                >
-                  <div className="font-medium text-foreground">{sku.material}</div>
-                  <div className="text-xs text-muted-foreground truncate">{sku.description}</div>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Plan No</label>
-        <input
-          type="text"
-          value={row.planNo}
-          onChange={(e) => onChange({ planNo: e.target.value })}
-          placeholder="—"
-          className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-      </div>
-
-      <div className="flex items-center justify-between pt-1">
-        <label className="text-xs font-medium text-muted-foreground">Qty</label>
-        <QtyStepper value={row.qty} min={0} onChange={(qty) => onChange({ qty })} />
-      </div>
+    <div className="relative w-full min-w-0">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setShowSuggestions(true);
+        }}
+        onFocus={() => setShowSuggestions(true)}
+        onClick={() => setShowSuggestions(true)}
+        onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+        placeholder="Search tire"
+        autoComplete="off"
+        className="w-full min-w-0 bg-transparent px-1.5 py-1.5 pr-5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setShowSuggestions((s) => !s)}
+        className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+        aria-label="Show tire options"
+      >
+        <ChevronDown className="size-3" />
+      </button>
+      {showSuggestions && suggestions.length > 0 && (
+        <ul className="absolute z-10 mt-1 w-48 max-h-56 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
+          {suggestions.map((sku) => (
+            <li key={sku.id}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(sku.material);
+                  setShowSuggestions(false);
+                }}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+              >
+                <div className="font-medium text-foreground">{sku.material}</div>
+                <div className="text-xs text-muted-foreground truncate">{sku.description}</div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

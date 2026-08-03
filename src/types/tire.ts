@@ -153,7 +153,7 @@ export const DISPATCH_STATUS_ORDER: DispatchStatus[] = [
   "delivered",
 ];
 
-export type BayStatus = "closed" | "running" | "hold";
+export type BayStatus = "closed" | "running" | "hold" | "qc-pending";
 
 // One card per bay (1-13, fixed) on the bay booking board.
 export interface BayBooking {
@@ -171,6 +171,7 @@ export const BAY_STATUS_LABELS: Record<BayStatus, string> = {
   closed: "Closed",
   running: "Running",
   hold: "Hold",
+  "qc-pending": "QC Pending",
 };
 
 export const DELIVERY_PROGRESS: Record<DispatchStatus, number> = {

@@ -12,7 +12,6 @@ const SEED: Record<string, unknown> = {
   dispatchLogs: [],
   dispatchPlans: [],
   shipmentTrackingUpdates: [],
-  bayBookings: [],
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
