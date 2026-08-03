@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
 import { ChevronDown, Filter, LayoutGrid, Search } from "lucide-react";
 import { fetchBayBookings, upsertBayBooking } from "@/lib/bay-bookings";
 import { fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
@@ -81,24 +80,13 @@ export default function BayBooking() {
   }, [rows, search, statusFilter]);
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
-            <LayoutGrid className="size-6 text-primary" />
-            Loading bay
-          </h1>
-          <p className="text-muted-foreground">Track what's pending in each of the 13 bays.</p>
-        </div>
-        <Link
-          to="/"
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-        >
-          Back to home
-        </Link>
-      </div>
+    <div className="p-4 sm:p-6 space-y-4">
+      <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+        <LayoutGrid className="size-6 text-primary" />
+        Loading Bay
+      </h1>
 
-      <div className="flex items-center gap-2 max-w-xl">
+      <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
