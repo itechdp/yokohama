@@ -167,6 +167,16 @@ export interface BayBooking {
 
 export const BAY_COUNT = 13;
 
+// A tyre + qty still owed against a dispatch plan, logged from the Loading
+// Bay board's "Pending Tyre" button. Several entries can exist per plan.
+export interface PlanPendingTire {
+  id: number;
+  planNo: string;
+  tire: string;
+  qty: number;
+  createdAt: string;
+}
+
 export const BAY_STATUS_LABELS: Record<BayStatus, string> = {
   closed: "Closed",
   running: "Running",

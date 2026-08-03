@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Filter, LayoutGrid, Search } from "lucide-react";
+import { Link } from "react-router";
+import { ArrowRight, ChevronDown, ClipboardList, Filter, LayoutGrid, Search } from "lucide-react";
 import { fetchBayBookings, upsertBayBooking } from "@/lib/bay-bookings";
-import { fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
-import type { TireSkuRow } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { BAY_COUNT, BAY_STATUS_LABELS, type BayBooking, type BayStatus } from "@/types/tire";
 
@@ -71,20 +70,25 @@ export default function BayBooking() {
     return rows.filter((r) => {
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (!q) return true;
-      return (
-        String(r.bay).includes(q) ||
-        r.pendingTire.toLowerCase().includes(q) ||
-        r.planNo.toLowerCase().includes(q)
-      );
+      return String(r.bay).includes(q) || r.planNo.toLowerCase().includes(q);
     });
   }, [rows, search, statusFilter]);
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
-      <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
-        <LayoutGrid className="size-6 text-primary" />
-        Loading Bay
-      </h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+          <LayoutGrid className="size-6 text-primary" />
+          Loading Bay
+        </h1>
+        <Link
+          to="/bays/pending"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+        >
+          <ClipboardList className="size-4" />
+          Pending Tyre
+        </Link>
+      </div>
 
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
@@ -93,7 +97,7 @@ export default function BayBooking() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by bay, tire, or plan no"
+            placeholder="Search by bay or plan no"
             className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
@@ -108,11 +112,9 @@ export default function BayBooking() {
         <div className="border border-border">
           <table className="w-full table-fixed border-collapse text-xs">
             <colgroup>
-              <col className="w-8" />
+              <col className="w-12" />
               <col />
-              <col className="w-[22%]" />
-              <col className="w-[24%]" />
-              <col className="w-11" />
+              <col />
             </colgroup>
             <thead>
               <tr className="bg-muted">
@@ -120,16 +122,10 @@ export default function BayBooking() {
                   Bay
                 </th>
                 <th className="border border-border px-1.5 py-1.5 text-left font-medium text-muted-foreground">
-                  Tire
-                </th>
-                <th className="border border-border px-1.5 py-1.5 text-left font-medium text-muted-foreground">
                   Plan
                 </th>
                 <th className="border border-border px-1.5 py-1.5 text-left font-medium text-muted-foreground">
                   Status
-                </th>
-                <th className="border border-border px-1 py-1.5 text-center font-medium text-muted-foreground">
-                  Qty
                 </th>
               </tr>
             </thead>
@@ -140,34 +136,27 @@ export default function BayBooking() {
                     {row.bay}
                   </td>
                   <td className="border border-border p-0">
-                    <PendingTireCell
-                      value={row.pendingTire}
-                      onChange={(pendingTire) => updateRow(row.bay, { pendingTire })}
-                    />
-                  </td>
-                  <td className="border border-border p-0">
-                    <input
-                      type="text"
-                      value={row.planNo}
-                      onChange={(e) => updateRow(row.bay, { planNo: e.target.value })}
-                      placeholder="—"
-                      className="w-full bg-transparent px-1.5 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
-                    />
+                    <div className="flex items-center gap-1.5 px-1.5">
+                      <input
+                        type="text"
+                        value={row.planNo}
+                        onChange={(e) => updateRow(row.bay, { planNo: e.target.value })}
+                        placeholder="—"
+                        className="w-full min-w-0 bg-transparent py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
+                      />
+                      {row.planNo.trim() && (
+                        <Link
+                          to={`/bays/pending/${encodeURIComponent(row.planNo.trim())}`}
+                          className="inline-flex shrink-0 items-center justify-center rounded-md bg-primary p-1 text-white hover:bg-primary/90"
+                          aria-label={`Pending tyre for plan ${row.planNo.trim()}`}
+                        >
+                          <ArrowRight className="size-3" />
+                        </Link>
+                      )}
+                    </div>
                   </td>
                   <td className="border border-border p-1">
                     <StatusDropdown value={row.status} onChange={(status) => updateRow(row.bay, { status })} />
-                  </td>
-                  <td className="border border-border p-0">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={row.qty === 0 ? "" : row.qty}
-                      onChange={(e) =>
-                        updateRow(row.bay, { qty: e.target.value === "" ? 0 : Number(e.target.value.replace(/\D/g, "")) || 0 })
-                      }
-                      placeholder="0"
-                      className="w-full bg-transparent px-1 py-1.5 text-center text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
-                    />
                   </td>
                 </tr>
               ))}
@@ -268,75 +257,6 @@ function FilterDropdown({ value, onChange }: { value: StatusFilter; onChange: (s
                   <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT_STYLES[s])} />
                 )}
                 {s === "all" ? "All" : BAY_STATUS_LABELS[s]}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function PendingTireCell({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const [suggestions, setSuggestions] = useState<TireSkuRow[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const requestId = useRef(0);
-
-  useEffect(() => {
-    const query = value.trim();
-    const id = ++requestId.current;
-    const timeout = setTimeout(() => {
-      const request = query
-        ? searchTireSkus(query)
-        : fetchTireSkusPage({ page: 0, pageSize: 8 }).then((p) => p.rows);
-      request.then((rows) => {
-        if (requestId.current === id) setSuggestions(rows);
-      });
-    }, 250);
-    return () => clearTimeout(timeout);
-  }, [value]);
-
-  return (
-    <div className="relative w-full min-w-0">
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setShowSuggestions(true);
-        }}
-        onFocus={() => setShowSuggestions(true)}
-        onClick={() => setShowSuggestions(true)}
-        onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-        placeholder="Search tire"
-        autoComplete="off"
-        className="w-full min-w-0 bg-transparent px-1.5 py-1.5 pr-5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
-      />
-      <button
-        type="button"
-        tabIndex={-1}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => setShowSuggestions((s) => !s)}
-        className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
-        aria-label="Show tire options"
-      >
-        <ChevronDown className="size-3" />
-      </button>
-      {showSuggestions && suggestions.length > 0 && (
-        <ul className="absolute z-10 mt-1 w-48 max-h-56 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
-          {suggestions.map((sku) => (
-            <li key={sku.id}>
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  onChange(sku.material);
-                  setShowSuggestions(false);
-                }}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-              >
-                <div className="font-medium text-foreground">{sku.material}</div>
-                <div className="text-xs text-muted-foreground truncate">{sku.description}</div>
               </button>
             </li>
           ))}
