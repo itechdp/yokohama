@@ -49,6 +49,15 @@ export async function addPlanPendingTire(
   return { row: fromRow(data), error: null };
 }
 
+export async function updatePlanPendingTireQty(id: number, qty: number): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("plan_pending_tires").update({ qty }).eq("id", id);
+  if (error) {
+    console.warn("plan_pending_tires update failed:", error.message);
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
 export async function deletePlanPendingTire(id: number): Promise<{ error: string | null }> {
   const { error } = await supabase.from("plan_pending_tires").delete().eq("id", id);
   if (error) {

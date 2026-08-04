@@ -1,15 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, ClipboardList, Plus, Trash2 } from "lucide-react";
-import { addPlanPendingTire, deletePlanPendingTire, fetchPlanPendingTires } from "@/lib/plan-pending-tires";
+import { ArrowLeft, Check, ClipboardList, PackageCheck, Plus, Trash2, X } from "lucide-react";
+import {
+  addPlanPendingTire,
+  deletePlanPendingTire,
+  fetchPlanPendingTires,
+  updatePlanPendingTireQty,
+} from "@/lib/plan-pending-tires";
 import { fetchTireSkusPage } from "@/lib/tire-skus";
 import type { TireSkuRow } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
 import type { PlanPendingTire } from "@/types/tire";
 
 export default function PendingTyreDetail() {
   const { planNo = "" } = useParams<{ planNo: string }>();
   const [entries, setEntries] = useState<PlanPendingTire[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [receivingId, setReceivingId] = useState<number | null>(null);
+  const [receiveQty, setReceiveQty] = useState("");
 
   useEffect(() => {
     fetchPlanPendingTires().then((all) => setEntries(all.filter((t) => t.planNo === planNo)));
@@ -26,6 +34,32 @@ export default function PendingTyreDetail() {
   const handleDelete = async (id: number) => {
     setEntries((prev) => prev.filter((t) => t.id !== id));
     await deletePlanPendingTire(id);
+  };
+
+  const startReceive = (id: number) => {
+    setReceivingId(id);
+    setReceiveQty("");
+  };
+
+  const cancelReceive = () => {
+    setReceivingId(null);
+    setReceiveQty("");
+  };
+
+  const handleReceive = async (entry: PlanPendingTire) => {
+    const receivedQty = Number(receiveQty) || 0;
+    if (receivedQty <= 0 || receivedQty > entry.qty) return;
+    const remaining = entry.qty - receivedQty;
+
+    if (remaining === 0) {
+      setEntries((prev) => prev.filter((t) => t.id !== entry.id));
+      await deletePlanPendingTire(entry.id);
+    } else {
+      setEntries((prev) => prev.map((t) => (t.id === entry.id ? { ...t, qty: remaining } : t)));
+      await updatePlanPendingTireQty(entry.id, remaining);
+    }
+    setReceivingId(null);
+    setReceiveQty("");
   };
 
   return (
@@ -62,22 +96,70 @@ export default function PendingTyreDetail() {
       {entries.length > 0 && (
         <ul className="space-y-2">
           {entries.map((entry) => (
-            <li
-              key={entry.id}
-              className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3"
-            >
-              <span className="truncate text-sm text-foreground">{entry.tire || "—"}</span>
-              <span className="flex shrink-0 items-center gap-3">
-                <span className="text-sm font-medium text-foreground">Qty {entry.qty}</span>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(entry.id)}
-                  className="text-muted-foreground hover:text-danger"
-                  aria-label="Remove pending tyre"
-                >
-                  <Trash2 className="size-4" />
-                </button>
-              </span>
+            <li key={entry.id} className="rounded-xl border border-border bg-card px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-sm text-foreground">{entry.tire || "—"}</span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <span className="text-sm font-medium text-foreground">Qty {entry.qty}</span>
+                  <button
+                    type="button"
+                    onClick={() => startReceive(entry.id)}
+                    className="text-muted-foreground hover:text-success"
+                    aria-label="Receive tyre"
+                  >
+                    <PackageCheck className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(entry.id)}
+                    className="text-muted-foreground hover:text-danger"
+                    aria-label="Remove pending tyre"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </span>
+              </div>
+
+              {receivingId === entry.id &&
+                (() => {
+                  const exceeds = Number(receiveQty) > entry.qty;
+                  return (
+                    <div className="space-y-1 pt-1">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoFocus
+                          value={receiveQty}
+                          onChange={(e) => setReceiveQty(e.target.value.replace(/\D/g, ""))}
+                          placeholder={`Up to ${entry.qty}`}
+                          className={cn(
+                            "w-24 rounded-lg border bg-transparent px-3 py-1.5 text-center text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2",
+                            exceeds ? "border-danger focus:ring-danger" : "border-border focus:ring-ring",
+                          )}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleReceive(entry)}
+                          disabled={!receiveQty || exceeds}
+                          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-success text-white hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Confirm received"
+                        >
+                          <Check className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelReceive}
+                          className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted"
+                          aria-label="Cancel"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                      {exceeds && <p className="text-right text-xs text-danger">Only {entry.qty} pending.</p>}
+                    </div>
+                  );
+                })()}
             </li>
           ))}
         </ul>
