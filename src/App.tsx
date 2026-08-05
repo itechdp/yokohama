@@ -1,6 +1,7 @@
 import { Route, Routes } from "react-router";
 import Layout from "@/components/layout";
 import BayBooking from "@/pages/bay-booking";
+import BayHistory from "@/pages/bay-history";
 import Home from "@/pages/home";
 import PendingTyreDetail from "@/pages/pending-tyre-detail";
 import PendingTyrePlans from "@/pages/pending-tyre-plans";
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/tires/outward" element={<TireOutward />} />
         <Route path="/tires/dispatch" element={<TireDispatch />} />
         <Route path="/bays" element={<BayBooking />} />
+        <Route path="/bays/history" element={<BayHistory />} />
         <Route path="/bays/pending" element={<PendingTyrePlans />} />
         <Route path="/bays/pending/:planNo" element={<PendingTyreDetail />} />
         <Route path="/warehouses" element={<Warehouses />} />

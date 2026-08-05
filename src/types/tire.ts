@@ -184,6 +184,20 @@ export const BAY_STATUS_LABELS: Record<BayStatus, string> = {
   "qc-pending": "QC Pending",
 };
 
+// One occupancy session of a plan no. on a bay — from the moment it's set
+// until the bay is marked Closed (or the plan is cleared/replaced).
+// closedAt is null while the session is still open (bay not yet Closed).
+export interface BayHistorySession {
+  id: number;
+  bay: number;
+  planNo: string;
+  status: BayStatus;
+  qty: number;
+  pendingTire: string;
+  openedAt: string;
+  closedAt: string | null;
+}
+
 export const DELIVERY_PROGRESS: Record<DispatchStatus, number> = {
   "holding-bay": 5,
   loading: 12,

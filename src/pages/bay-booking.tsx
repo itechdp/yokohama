@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ArrowRight, ChevronDown, ClipboardList, Filter, LayoutGrid, Search } from "lucide-react";
 import { fetchBayBookings, upsertBayBooking } from "@/lib/bay-bookings";
+import { syncBayHistory } from "@/lib/bay-history";
 import { cn } from "@/lib/utils";
 import { BAY_COUNT, BAY_STATUS_LABELS, type BayBooking, type BayStatus } from "@/types/tire";
 
@@ -55,11 +56,15 @@ export default function BayBooking() {
 
   const updateRow = (bay: number, patch: Partial<BayBooking>) => {
     setRows((prev) => {
+      const prevRow = prev.find((r) => r.bay === bay);
       const next = prev.map((r) => (r.bay === bay ? { ...r, ...patch, updatedAt: new Date().toISOString() } : r));
       const updatedRow = next.find((r) => r.bay === bay);
-      if (updatedRow) {
+      if (updatedRow && prevRow) {
         clearTimeout(saveTimeouts.current[bay]);
-        saveTimeouts.current[bay] = setTimeout(() => upsertBayBooking(updatedRow), 400);
+        saveTimeouts.current[bay] = setTimeout(() => {
+          upsertBayBooking(updatedRow);
+          syncBayHistory(prevRow, updatedRow);
+        }, 400);
       }
       return next;
     });
