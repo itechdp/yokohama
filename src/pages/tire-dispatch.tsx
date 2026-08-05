@@ -13,6 +13,7 @@ import {
   User,
 } from "lucide-react";
 import { readDb, writeDb } from "@/lib/db";
+import { fetchTires, upsertTires } from "@/lib/tires";
 import { cn } from "@/lib/utils";
 import {
   DISPATCH_STATUS_LABELS,
@@ -50,9 +51,9 @@ export default function TireDispatch() {
 
   const loadData = () => {
     const db = readDb();
-    setTires((db.tires as Tire[]) || []);
     setDispatchLogs((db.dispatchLogs as TireDispatch[]) || []);
     setPlans((db.dispatchPlans as DispatchPlan[]) || []);
+    fetchTires().then(setTires);
   };
 
   useEffect(() => {
@@ -427,7 +428,7 @@ function PlanDetail({
     setSelectedQty((prev) => ({ ...prev, [key]: value.replace(/\D/g, "") }));
   };
 
-  const handleAddToPlan = () => {
+  const handleAddToPlan = async () => {
     setError(null);
     setSuccess(null);
 
@@ -447,10 +448,6 @@ function PlanDetail({
       }
     }
 
-    const db = readDb();
-    const tiresList: Tire[] = db.tires || [];
-    const historyList: StageHistory[] = db.tireHistory || [];
-    const logsList: TireDispatch[] = db.dispatchLogs || [];
     const now = new Date().toISOString();
 
     const chosenIds: string[] = [];
@@ -460,11 +457,15 @@ function PlanDetail({
     }
     const chosenSet = new Set(chosenIds);
 
-    const updatedTires = tiresList.map((t) =>
-      chosenSet.has(t.id)
-        ? { ...t, currentStage: "dispatch" as const, location: plan.destination, updatedAt: now }
-        : t,
-    );
+    const updatedTires = tires
+      .filter((t) => chosenSet.has(t.id))
+      .map((t) => ({ ...t, currentStage: "dispatch" as const, location: plan.destination, updatedAt: now }));
+
+    const { error: tiresError } = await upsertTires(updatedTires);
+    if (tiresError) {
+      setError(`Failed to update tire stage: ${tiresError}`);
+      return;
+    }
 
     const newLogs: TireDispatch[] = chosenIds.map((tireId, i) => ({
       id: `d-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
@@ -488,9 +489,11 @@ function PlanDetail({
       notes: `Added to truck ${plan.truckNumber} plan — holding in bay`,
     }));
 
+    const db = readDb();
+    const historyList: StageHistory[] = db.tireHistory || [];
+    const logsList: TireDispatch[] = db.dispatchLogs || [];
     writeDb({
       ...db,
-      tires: updatedTires,
       dispatchLogs: [...logsList, ...newLogs],
       tireHistory: [...historyList, ...newHistory],
     });

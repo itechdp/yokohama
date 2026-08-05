@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Save, UploadCloud } from "lucide-react";
-import { readDb, writeDb } from "@/lib/db";
+import { insertTires } from "@/lib/tires";
 import { searchTireSkus, upsertTireSkus } from "@/lib/tire-skus";
 import type { TireSkuRow } from "@/lib/supabase";
 import type { Tire, TireStage } from "@/types/tire";
@@ -47,8 +47,6 @@ export default function TireNew() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const db = readDb();
-    const tires: Tire[] = db.tires || [];
     const now = new Date().toISOString();
     const id = `t-${Date.now()}`;
 
@@ -73,7 +71,7 @@ export default function TireNew() {
       updatedAt: now,
     };
 
-    writeDb({ ...db, tires: [...tires, newTire] });
+    insertTires([newTire]);
 
     if (material) {
       upsertTireSkus([

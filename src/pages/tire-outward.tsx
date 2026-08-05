@@ -5,7 +5,9 @@ import { readDb, writeDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import QtyStepper from "@/components/qty-stepper";
 import SuccessOverlay from "@/components/success-overlay";
-import { binForLocation, PICKED_LOCATION, WAREHOUSES } from "@/data/warehouse-bins";
+import { binForLocation, PICKED_LOCATION, type WarehouseDef } from "@/data/warehouse-bins";
+import { fetchTires, upsertTires } from "@/lib/tires";
+import { fetchWarehouses } from "@/lib/warehouses";
 import type { StageHistory, Tire } from "@/types/tire";
 
 interface TireGroup {
@@ -19,25 +21,29 @@ interface TireGroup {
 
 export default function TireOutward() {
   const [tires, setTires] = useState<Tire[]>([]);
+  const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
   const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
-  const [warehouseKey, setWarehouseKey] = useState(WAREHOUSES[0].key);
+  const [warehouseKey, setWarehouseKey] = useState("");
   const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
 
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    const db = readDb();
-    setTires((db.tires as Tire[]) || []);
+    fetchTires().then(setTires);
+    fetchWarehouses().then((rows) => {
+      setWarehouses(rows);
+      setWarehouseKey((prev) => prev || rows[0]?.key || "");
+    });
   }, []);
 
   // Only tires actually sitting in a bin right now (not already picked/dispatched).
   const candidates = useMemo(
     () =>
       tires.filter(
-        (t) => t.currentStage === "warehouse" && WAREHOUSES.some((w) => binForLocation(w, t.location)),
+        (t) => t.currentStage === "warehouse" && warehouses.some((w) => binForLocation(w, t.location)),
       ),
-    [tires],
+    [tires, warehouses],
   );
 
   const groups = useMemo(() => {
@@ -81,17 +87,17 @@ export default function TireOutward() {
   // How much of the searched/selected tires sits in each warehouse — helps pick the right one.
   const warehouseCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const w of WAREHOUSES) counts[w.key] = 0;
+    for (const w of warehouses) counts[w.key] = 0;
     if (selectedModels.size === 0) return counts;
     for (const t of candidates) {
       if (!selectedModels.has(t.model)) continue;
-      const w = WAREHOUSES.find((w) => binForLocation(w, t.location));
+      const w = warehouses.find((w) => binForLocation(w, t.location));
       if (w) counts[w.key] = (counts[w.key] || 0) + 1;
     }
     return counts;
-  }, [candidates, selectedModels]);
+  }, [candidates, selectedModels, warehouses]);
 
-  const selectedWarehouse = WAREHOUSES.find((w) => w.key === warehouseKey) || null;
+  const selectedWarehouse = warehouses.find((w) => w.key === warehouseKey) || null;
   const maxRows = selectedWarehouse ? Math.max(...selectedWarehouse.columnRowCounts) : 0;
 
   // bin code -> count of the selected tire types sitting there right now.
@@ -117,7 +123,7 @@ export default function TireOutward() {
     });
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setSuccess(null);
     if (selectedGroups.length === 0) return;
 
@@ -151,18 +157,20 @@ export default function TireOutward() {
       }
     }
 
-    const db = readDb();
-    const tiresList: Tire[] = db.tires || [];
-    const historyList: StageHistory[] = db.tireHistory || [];
     const now = new Date().toISOString();
-
     const withdrawnIds = new Set(withdrawals.map((w) => w.tireId));
-    const updatedTires = tiresList.map((t) =>
-      withdrawnIds.has(t.id) ? { ...t, location: PICKED_LOCATION, updatedAt: now } : t,
-    );
+    const updatedTires = tires
+      .filter((t) => withdrawnIds.has(t.id))
+      .map((t) => ({ ...t, location: PICKED_LOCATION, updatedAt: now }));
+
+    const { error } = await upsertTires(updatedTires);
+    if (error) {
+      setSuccess(null);
+      return;
+    }
 
     const newHistory: StageHistory[] = withdrawals.map((w, idx) => {
-      const fromTire = tiresList.find((t) => t.id === w.tireId);
+      const fromTire = tires.find((t) => t.id === w.tireId);
       return {
         id: `h-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
         tireId: w.tireId,
@@ -174,9 +182,15 @@ export default function TireOutward() {
       };
     });
 
-    writeDb({ ...db, tires: updatedTires, tireHistory: [...historyList, ...newHistory] });
+    const db = readDb();
+    const historyList: StageHistory[] = db.tireHistory || [];
+    writeDb({ ...db, tireHistory: [...historyList, ...newHistory] });
 
-    setTires(updatedTires);
+    setTires((prev) => {
+      const byId = new Map(prev.map((t) => [t.id, t]));
+      for (const t of updatedTires) byId.set(t.id, t);
+      return Array.from(byId.values());
+    });
     setSelectedQty({});
     setSelectedBins(new Set());
     setSuccess(
@@ -265,8 +279,17 @@ export default function TireOutward() {
           <WarehouseIcon className="size-4 text-muted-foreground" />
           2. Warehouse
         </h2>
+        {warehouses.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No warehouses set up yet — add one on the{" "}
+            <Link to="/warehouses" className="underline">
+              Warehouses
+            </Link>{" "}
+            page.
+          </p>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {WAREHOUSES.map((w) => (
+          {warehouses.map((w) => (
             <button
               key={w.key}
               type="button"

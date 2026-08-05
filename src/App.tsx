@@ -10,6 +10,7 @@ import TireInward from "@/pages/tire-inward";
 import TireNew from "@/pages/tire-new";
 import TireOutward from "@/pages/tire-outward";
 import TireSkuCatalog from "@/pages/tire-sku-catalog";
+import Warehouses from "@/pages/warehouses";
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/bays" element={<BayBooking />} />
         <Route path="/bays/pending" element={<PendingTyrePlans />} />
         <Route path="/bays/pending/:planNo" element={<PendingTyreDetail />} />
+        <Route path="/warehouses" element={<Warehouses />} />
       </Route>
     </Routes>
   );

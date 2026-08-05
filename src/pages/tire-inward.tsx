@@ -1,77 +1,73 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { ArrowDownToLine, Warehouse as WarehouseIcon } from "lucide-react";
+import { ArrowDownToLine, Search, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { readDb, writeDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import QtyStepper from "@/components/qty-stepper";
 import SuccessOverlay from "@/components/success-overlay";
-import { WAREHOUSES, firstEmptyBin, locationForBin, occupiedBins } from "@/data/warehouse-bins";
+import { firstEmptyBin, locationForBin, occupiedBins, type WarehouseDef } from "@/data/warehouse-bins";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
+import { fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
+import { fetchTires, upsertTires } from "@/lib/tires";
+import { fetchWarehouses } from "@/lib/warehouses";
+import type { TireSkuRow } from "@/lib/supabase";
 import type { PlacementLog, StageHistory, Tire } from "@/types/tire";
 
-interface TireGroup {
+interface SelectedTire {
   key: string;
+  material: string;
   model: string;
-  material?: string;
   brand?: string;
   plyRatingBottom?: string;
-  tireIds: string[];
+  qty: number;
 }
 
 export default function TireInward() {
   const [tires, setTires] = useState<Tire[]>([]);
+  const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
-  const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
-  const [warehouseKey, setWarehouseKey] = useState(WAREHOUSES[0].key);
+  const [selectedTires, setSelectedTires] = useState<SelectedTire[]>([]);
+  const [warehouseKey, setWarehouseKey] = useState("");
   const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
 
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    const db = readDb();
-    setTires((db.tires as Tire[]) || []);
+    fetchTires().then(setTires);
+    fetchWarehouses().then((rows) => {
+      setWarehouses(rows);
+      setWarehouseKey((prev) => prev || rows[0]?.key || "");
+    });
   }, []);
 
-  const candidates = useMemo(() => tires.filter((t) => t.currentStage === "production"), [tires]);
-
-  const groups = useMemo(() => {
-    const map = new Map<string, TireGroup>();
-    for (const t of candidates) {
-      const key = t.model;
-      const existing = map.get(key);
-      if (existing) {
-        existing.tireIds.push(t.id);
-      } else {
-        map.set(key, {
-          key,
-          model: t.model,
-          material: t.serialNumber,
-          brand: t.brand,
-          plyRatingBottom: t.plyRatingBottom,
-          tireIds: [t.id],
-        });
-      }
-    }
-    return Array.from(map.values()).sort((a, b) => a.model.localeCompare(b.model));
-  }, [candidates]);
-
-  const selectedGroups = useMemo(() => groups.filter((g) => g.key in selectedQty), [groups, selectedQty]);
-  const totalQty = selectedGroups.reduce((sum, g) => sum + (selectedQty[g.key] || 0), 0);
-
-  const toggleGroup = (key: string) => {
-    setSelectedQty((prev) => {
-      const next = { ...prev };
-      if (key in next) delete next[key];
-      else next[key] = 1;
-      return next;
+  const addTireFromCatalog = (sku: TireSkuRow) => {
+    setSelectedTires((prev) => {
+      if (prev.some((t) => t.material === sku.material)) return prev;
+      return [
+        ...prev,
+        {
+          key: sku.material,
+          material: sku.material,
+          model: sku.description,
+          brand: sku.brand ?? undefined,
+          plyRatingBottom: sku.ply_rating_bottom ?? undefined,
+          qty: 1,
+        },
+      ];
     });
   };
 
-  const setQty = (key: string, value: number) => {
-    setSelectedQty((prev) => ({ ...prev, [key]: value }));
+  const removeSelectedTire = (key: string) => {
+    setSelectedTires((prev) => prev.filter((t) => t.key !== key));
   };
 
-  const selectedWarehouse = WAREHOUSES.find((w) => w.key === warehouseKey) || null;
+  const setQty = (key: string, value: number) => {
+    setSelectedTires((prev) => prev.map((t) => (t.key === key ? { ...t, qty: value } : t)));
+  };
+
+  const totalQty = selectedTires.reduce((sum, t) => sum + t.qty, 0);
+
+  const selectedWarehouse = warehouses.find((w) => w.key === warehouseKey) || null;
   const occupied = useMemo(
     () => (selectedWarehouse ? occupiedBins(selectedWarehouse, tires) : new Set<string>()),
     [selectedWarehouse, tires],
@@ -87,9 +83,9 @@ export default function TireInward() {
     });
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setSuccess(null);
-    if (selectedGroups.length === 0 || !selectedWarehouse) return;
+    if (selectedTires.length === 0 || !selectedWarehouse) return;
 
     // No bin tapped — just use the next empty one so this never blocks.
     const binsArray =
@@ -100,54 +96,60 @@ export default function TireInward() {
     const assignments: { tireId: string; bin: string; model: string }[] = [];
     const extraTires: Tire[] = [];
     let i = 0;
-    for (const g of selectedGroups) {
-      const qty = selectedQty[g.key] || 0;
-      const existingIds = g.tireIds.slice(0, qty);
+    for (const t of selectedTires) {
+      // Consume any matching production-stage units already on record first,
+      // then synthesize the rest fresh from the tire catalog (Supabase).
+      const existingIds = tires
+        .filter((existing) => existing.currentStage === "production" && existing.serialNumber === t.material)
+        .slice(0, t.qty)
+        .map((existing) => existing.id);
+
       for (const tireId of existingIds) {
-        assignments.push({ tireId, bin: binsArray[i % binsArray.length], model: g.model });
+        assignments.push({ tireId, bin: binsArray[i % binsArray.length], model: t.model });
         i++;
       }
 
-      // Requested more than what's tracked in production — create the shortfall
-      // as new units of the same tire spec so any quantity can be received.
-      const shortfall = qty - existingIds.length;
+      const shortfall = t.qty - existingIds.length;
       for (let k = 0; k < shortfall; k++) {
-        const id = `t-${Date.now()}-${g.key}-${k}-${Math.random().toString(36).slice(2, 7)}`;
+        const id = `t-${Date.now()}-${t.key}-${k}-${Math.random().toString(36).slice(2, 7)}`;
         const tire = buildTireFromCatalogRow(
           {
-            material: g.material || g.model,
-            description: g.model,
-            plyRatingBottom: g.plyRatingBottom || "",
-            brand: g.brand || "",
+            material: t.material,
+            description: t.model,
+            plyRatingBottom: t.plyRatingBottom || "",
+            brand: t.brand || "",
           },
           id,
           now,
         );
         extraTires.push(tire);
-        assignments.push({ tireId: id, bin: binsArray[i % binsArray.length], model: g.model });
+        assignments.push({ tireId: id, bin: binsArray[i % binsArray.length], model: t.model });
         i++;
       }
     }
 
-    const db = readDb();
-    const tiresList: Tire[] = db.tires || [];
-    const historyList: StageHistory[] = db.tireHistory || [];
-    const logsList: PlacementLog[] = db.placementLogs || [];
-
     const binByTireId = new Map(assignments.map((a) => [a.tireId, a.bin]));
-    const updatedTires = [
-      ...tiresList.map((t) => {
-        const bin = binByTireId.get(t.id);
-        if (!bin) return t;
-        return { ...t, currentStage: "warehouse" as const, location: locationForBin(selectedWarehouse, bin), updatedAt: now };
-      }),
-      ...extraTires.map((t) => ({
+    const changedExisting = tires
+      .filter((t) => binByTireId.has(t.id))
+      .map((t) => ({
         ...t,
         currentStage: "warehouse" as const,
         location: locationForBin(selectedWarehouse, binByTireId.get(t.id)!),
         updatedAt: now,
-      })),
-    ];
+      }));
+    const newTireRows = extraTires.map((t) => ({
+      ...t,
+      currentStage: "warehouse" as const,
+      location: locationForBin(selectedWarehouse, binByTireId.get(t.id)!),
+      updatedAt: now,
+    }));
+    const tiresToSave = [...changedExisting, ...newTireRows];
+
+    const { error } = await upsertTires(tiresToSave);
+    if (error) {
+      setSuccess(null);
+      return;
+    }
 
     const newHistory: StageHistory[] = assignments.map((a, idx) => ({
       id: `h-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
@@ -168,18 +170,24 @@ export default function TireInward() {
       notes: `Inward: ${a.model} moved to ${locationForBin(selectedWarehouse, a.bin)}`,
     }));
 
+    const db = readDb();
+    const historyList: StageHistory[] = db.tireHistory || [];
+    const logsList: PlacementLog[] = db.placementLogs || [];
     writeDb({
       ...db,
-      tires: updatedTires,
       tireHistory: [...historyList, ...newHistory],
       placementLogs: [...logsList, ...newLogs],
     });
 
-    setTires(updatedTires);
-    setSelectedQty({});
+    setTires((prev) => {
+      const byId = new Map(prev.map((t) => [t.id, t]));
+      for (const t of tiresToSave) byId.set(t.id, t);
+      return Array.from(byId.values());
+    });
+    setSelectedTires([]);
     setSelectedBins(new Set());
     setSuccess(
-      `${assignments.length} tire${assignments.length === 1 ? "" : "s"} across ${selectedGroups.length} type${selectedGroups.length === 1 ? "" : "s"} placed across ${binsArray.length} bin${binsArray.length === 1 ? "" : "s"} in ${selectedWarehouse.label}.`,
+      `${assignments.length} tire${assignments.length === 1 ? "" : "s"} across ${selectedTires.length} type${selectedTires.length === 1 ? "" : "s"} placed across ${binsArray.length} bin${binsArray.length === 1 ? "" : "s"} in ${selectedWarehouse.label}.`,
     );
   };
 
@@ -203,58 +211,44 @@ export default function TireInward() {
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">1. Select tires</h2>
+        <p className="text-xs text-muted-foreground">Search the tire catalog and add each one with a quantity.</p>
 
-        {groups.length === 0 ? (
+        <TireCatalogSearch alreadySelected={selectedTires.map((t) => t.material)} onSelect={addTireFromCatalog} />
+
+        {selectedTires.length === 0 ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
-            No tires waiting in production.
+            No tires selected yet.
           </div>
         ) : (
           <ul className="space-y-2 max-h-96 overflow-y-auto">
-            {groups.map((g) => {
-              const isSelected = g.key in selectedQty;
-              return (
-                <li
-                  key={g.key}
-                  onClick={() => toggleGroup(g.key)}
-                  className={cn(
-                    "rounded-xl border px-4 py-3 text-sm transition-colors cursor-pointer",
-                    isSelected ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-muted",
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex flex-1 items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        readOnly
-                        className="size-5 rounded border-border text-primary focus:ring-ring pointer-events-none"
-                      />
-                      <div>
-                        <p className="font-medium text-foreground">{g.model}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {[g.material, g.brand, g.plyRatingBottom].filter(Boolean).join(" · ")}
-                        </p>
-                      </div>
-                    </div>
-                    <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary shrink-0">
-                      {g.tireIds.length} available
-                    </span>
+            {selectedTires.map((t) => (
+              <li key={t.key} className="rounded-xl border border-border bg-card px-4 py-3 text-sm space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground truncate">{t.model}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {[t.material, t.brand, t.plyRatingBottom].filter(Boolean).join(" · ")}
+                    </p>
                   </div>
-                  {isSelected && (
-                    <div className="mt-3 pl-8" onClick={(e) => e.stopPropagation()}>
-                      <QtyStepper value={selectedQty[g.key]} onChange={(v) => setQty(g.key, v)} />
-                    </div>
-                  )}
-                </li>
-              );
-            })}
+                  <button
+                    type="button"
+                    onClick={() => removeSelectedTire(t.key)}
+                    className="shrink-0 text-muted-foreground hover:text-danger"
+                    aria-label={`Remove ${t.model}`}
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+                <QtyStepper value={t.qty} onChange={(v) => setQty(t.key, v)} />
+              </li>
+            ))}
           </ul>
         )}
 
-        {selectedGroups.length > 0 && (
+        {selectedTires.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            {totalQty} tire{totalQty === 1 ? "" : "s"} selected across {selectedGroups.length} type
-            {selectedGroups.length === 1 ? "" : "s"}
+            {totalQty} tire{totalQty === 1 ? "" : "s"} selected across {selectedTires.length} type
+            {selectedTires.length === 1 ? "" : "s"}
           </p>
         )}
       </div>
@@ -264,8 +258,17 @@ export default function TireInward() {
           <WarehouseIcon className="size-4 text-muted-foreground" />
           2. Warehouse
         </h2>
+        {warehouses.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No warehouses set up yet — add one on the{" "}
+            <Link to="/warehouses" className="underline">
+              Warehouses
+            </Link>{" "}
+            page.
+          </p>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {WAREHOUSES.map((w) => (
+          {warehouses.map((w) => (
             <button
               key={w.key}
               type="button"
@@ -370,13 +373,84 @@ export default function TireInward() {
 
       <button
         onClick={handleConfirm}
-        disabled={selectedGroups.length === 0}
+        disabled={selectedTires.length === 0}
         className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         OK - Confirm inward
       </button>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
+    </div>
+  );
+}
+
+function TireCatalogSearch({
+  alreadySelected,
+  onSelect,
+}: {
+  alreadySelected: string[];
+  onSelect: (sku: TireSkuRow) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<TireSkuRow[]>([]);
+  const requestId = useRef(0);
+
+  // Always shows something: the first page of the catalog when there's no
+  // query, filtered results once the operator types. No focus/blur dance —
+  // the list is a normal part of the page, not a dropdown you have to summon.
+  useEffect(() => {
+    const q = query.trim();
+    const id = ++requestId.current;
+    const timeout = setTimeout(() => {
+      const request = q ? searchTireSkus(q, 20) : fetchTireSkusPage({ page: 0, pageSize: 20 }).then((p) => p.rows);
+      request.then((rows) => {
+        if (requestId.current === id) setResults(rows);
+      });
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [query]);
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search tire catalog by material or description"
+          autoComplete="off"
+          className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      </div>
+      <ul className="max-h-56 overflow-y-auto rounded-xl border border-border divide-y divide-border">
+        {results.length === 0 ? (
+          <li className="px-3 py-4 text-center text-xs text-muted-foreground">No matches.</li>
+        ) : (
+          results.map((sku) => {
+            const isSelected = alreadySelected.includes(sku.material);
+            return (
+              <li key={sku.id}>
+                <button
+                  type="button"
+                  disabled={isSelected}
+                  onClick={() => onSelect(sku)}
+                  className={cn(
+                    "w-full px-3 py-2 text-left text-sm transition-colors",
+                    isSelected ? "cursor-not-allowed opacity-40" : "hover:bg-muted",
+                  )}
+                >
+                  <div className="font-medium text-foreground">{sku.material}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {sku.description}
+                    {isSelected ? " — already added" : ""}
+                  </div>
+                </button>
+              </li>
+            );
+          })
+        )}
+      </ul>
     </div>
   );
 }

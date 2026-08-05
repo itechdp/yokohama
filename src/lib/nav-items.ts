@@ -1,4 +1,12 @@
-import { ArrowDownToLine, ArrowUpFromLine, LayoutGrid, List, Truck, type LucideIcon } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  LayoutGrid,
+  List,
+  Truck,
+  Warehouse,
+  type LucideIcon,
+} from "lucide-react";
 
 export interface NavItem {
   to: string;
@@ -15,4 +23,5 @@ export const FEATURE_ITEMS: NavItem[] = [
   { to: "/tires/skus", label: "Show tire", icon: List },
   { to: "/tires/dispatch", label: "Dispatch", icon: Truck },
   { to: "/bays", label: "Loading Bay", icon: LayoutGrid },
+  { to: "/warehouses", label: "Warehouses", icon: Warehouse },
 ];

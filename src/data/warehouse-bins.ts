@@ -1,33 +1,14 @@
-// Sourced from "Location Warehouse Capacity-.xlsx" (Working -file sheet).
-// Each warehouse maps to a bin prefix; each prefix has a fixed number of
-// columns, and each column has its own row count (racks are not uniform).
+// Each warehouse maps to a bin prefix; each prefix has a number of columns,
+// and each column has its own row count (racks are not uniform). Editable
+// from the Warehouses page (src/pages/warehouses.tsx) and persisted in
+// Supabase (src/lib/warehouses.ts) — this file only holds the shape and the
+// pure helpers that operate on it.
 export interface WarehouseDef {
   key: string;
   label: string;
   prefix: string;
   columnRowCounts: number[]; // index 0 = column 01, value = max row number in that column
 }
-
-export const WAREHOUSES: WarehouseDef[] = [
-  {
-    key: "Warehouse-1",
-    label: "Warehouse 1",
-    prefix: "A",
-    columnRowCounts: [29, 31, 31, 30, 30, 31, 31, 33, 33, 33, 33, 33, 33, 32],
-  },
-  {
-    key: "Warehouse-2",
-    label: "Warehouse 2",
-    prefix: "B",
-    columnRowCounts: [28, 34, 37, 37, 32, 34, 35, 35, 35, 33, 33, 33, 33, 29],
-  },
-  {
-    key: "warehouse-4 (Domestic)",
-    label: "Warehouse 4 (Domestic)",
-    prefix: "D",
-    columnRowCounts: [20, 22, 21, 21, 21, 25, 27],
-  },
-];
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 

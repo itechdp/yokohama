@@ -1,10 +1,9 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Check, FileSpreadsheet, Loader2, UploadCloud } from "lucide-react";
-import { readDb, writeDb } from "@/lib/db";
 import { buildTireFromCatalogRow, parseCatalogWorkbook, type CatalogRow } from "@/lib/tire-catalog";
 import { upsertTireSkus } from "@/lib/tire-skus";
-import type { Tire } from "@/types/tire";
+import { insertTires } from "@/lib/tires";
 
 // Large uploads (thousands of rows) shouldn't render every row in the
 // preview table — just enough to sanity-check the parse. The full parsed
@@ -52,16 +51,19 @@ export default function TireBulkUpload() {
 
     setUploading(true);
 
-    const db = readDb();
-    const tiresList: Tire[] = db.tires || [];
     const now = new Date().toISOString();
-
     const newTires = parsedRows.map((row, i) => buildTireFromCatalogRow(row, `t-${Date.now()}-${i}`, now));
-    writeDb({ ...db, tires: [...tiresList, ...newTires] });
 
-    const { error: skuError } = await upsertTireSkus(parsedRows);
+    const [{ error: tiresError }, { error: skuError }] = await Promise.all([
+      insertTires(newTires),
+      upsertTireSkus(parsedRows),
+    ]);
     setUploading(false);
 
+    if (tiresError) {
+      setError(`Failed to add tires to production: ${tiresError}`);
+      return;
+    }
     if (skuError) {
       setError(`Tires were added to production, but the SKU catalog update failed: ${skuError}`);
       return;

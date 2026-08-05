@@ -6,7 +6,6 @@ const DB_KEY = "app-db-v4";
 // Seed shape for a first run — extend this object's top-level keys as features are added,
 // never replace it wholesale (existing collections must keep working across edits).
 const SEED: Record<string, unknown> = {
-  tires: [],
   tireHistory: [],
   placementLogs: [],
   dispatchLogs: [],
