@@ -192,9 +192,8 @@ export default function TireInward() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
             <ArrowDownToLine className="size-6 text-primary" />
-            Inward - Warehouse
+            Inward
           </h1>
-          <p className="text-muted-foreground">Tap to select tires, quantities, and bin locations.</p>
         </div>
         <Link
           to="/"
@@ -206,15 +205,10 @@ export default function TireInward() {
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">1. Select tires</h2>
-        <p className="text-xs text-muted-foreground">Search the tire catalog and add each one with a quantity.</p>
 
         <TireCatalogSearch alreadySelected={selectedTires.map((t) => t.material)} onSelect={addTireFromCatalog} />
 
-        {selectedTires.length === 0 ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
-            No tires selected yet.
-          </div>
-        ) : (
+        {selectedTires.length > 0 && (
           <ul className="space-y-2 max-h-96 overflow-y-auto">
             {selectedTires.map((t) => (
               <li key={t.key} className="rounded-xl border border-border bg-card px-4 py-3 text-sm space-y-3">
@@ -292,10 +286,6 @@ export default function TireInward() {
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-end gap-4 text-xs text-muted-foreground">
-              <span>Tap to select — bins can stack multiple tires</span>
-            </div>
-
             <div className="overflow-auto max-h-96 rounded-xl border border-border">
               <table className="border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-card">

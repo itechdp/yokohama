@@ -202,9 +202,8 @@ export default function TireOutward() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
             <ArrowUpFromLine className="size-6 text-primary" />
-            Outward - Warehouse
+            Outward
           </h1>
-          <p className="text-muted-foreground">Tap to find a tire, pick quantities and bins to pull from.</p>
         </div>
         <Link
           to="/"
@@ -411,14 +410,6 @@ export default function TireOutward() {
       >
         OK - Confirm outward
       </button>
-
-      <p className="text-xs text-muted-foreground">
-        Picked tires stay in inventory but are freed from their bin — use{" "}
-        <Link to="/tires/dispatch" className="underline">
-          Dispatch tires
-        </Link>{" "}
-        next to assign a driver and destination.
-      </p>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
     </div>

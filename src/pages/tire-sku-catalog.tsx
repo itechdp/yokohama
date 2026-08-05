@@ -42,9 +42,6 @@ export default function TireSkuCatalog() {
             <List className="size-6 text-primary" />
             Tires
           </h1>
-          <p className="text-muted-foreground">
-            Material, Description, Ply Rating Bottom and Brand stored in Supabase (tire_skus).
-          </p>
         </div>
         <Link
           to="/tires/new"
