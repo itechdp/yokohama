@@ -12,7 +12,10 @@ import {
   Truck,
   User,
 } from "lucide-react";
-import { readDb, writeDb } from "@/lib/db";
+import { fetchDispatchLogs, insertDispatchLogs, updateDispatchLogStatus } from "@/lib/dispatch-logs";
+import { fetchDispatchPlans, insertDispatchPlan, updateDispatchPlanStatus } from "@/lib/dispatch-plans";
+import { insertShipmentTrackingUpdates } from "@/lib/shipment-tracking";
+import { insertTireHistory } from "@/lib/tire-history";
 import { fetchTires, upsertTires } from "@/lib/tires";
 import { cn } from "@/lib/utils";
 import {
@@ -50,9 +53,8 @@ export default function TireDispatch() {
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
   const loadData = () => {
-    const db = readDb();
-    setDispatchLogs((db.dispatchLogs as TireDispatch[]) || []);
-    setPlans((db.dispatchPlans as DispatchPlan[]) || []);
+    fetchDispatchLogs().then(setDispatchLogs);
+    fetchDispatchPlans().then(setPlans);
     fetchTires().then(setTires);
   };
 
@@ -116,7 +118,7 @@ function PlanList({
 
   const finalDestination = destination === "Other" ? otherDestination.trim() : destination;
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     setError(null);
     if (!driverName.trim()) {
       setError("Enter the driver name.");
@@ -135,8 +137,6 @@ function PlanList({
       return;
     }
 
-    const db = readDb();
-    const plansList: DispatchPlan[] = db.dispatchPlans || [];
     const now = new Date().toISOString();
     const plan: DispatchPlan = {
       id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -149,7 +149,11 @@ function PlanList({
       status: "open",
     };
 
-    writeDb({ ...db, dispatchPlans: [...plansList, plan] });
+    const { error } = await insertDispatchPlan(plan);
+    if (error) {
+      setError(`Failed to create plan: ${error}`);
+      return;
+    }
     onCreated(plan.id);
   };
 
@@ -489,21 +493,15 @@ function PlanDetail({
       notes: `Added to truck ${plan.truckNumber} plan — holding in bay`,
     }));
 
-    const db = readDb();
-    const historyList: StageHistory[] = db.tireHistory || [];
-    const logsList: TireDispatch[] = db.dispatchLogs || [];
-    writeDb({
-      ...db,
-      dispatchLogs: [...logsList, ...newLogs],
-      tireHistory: [...historyList, ...newHistory],
-    });
+    await insertDispatchLogs(newLogs);
+    await insertTireHistory(newHistory);
 
     setSelectedQty({});
     setSuccess(`${chosenIds.length} tire${chosenIds.length === 1 ? "" : "s"} added to this plan.`);
     onRefresh();
   };
 
-  const advanceStatus = (log: TireDispatch) => {
+  const advanceStatus = async (log: TireDispatch) => {
     const next: Partial<Record<DispatchStatus, DispatchStatus>> = {
       "holding-bay": "loading",
       loading: "loaded",
@@ -511,13 +509,7 @@ function PlanDetail({
     const nextStatus = next[log.status];
     if (!nextStatus) return;
 
-    const db = readDb();
-    const logsList: TireDispatch[] = db.dispatchLogs || [];
-    const historyList: StageHistory[] = db.tireHistory || [];
-    const trackingList: ShipmentTrackingUpdate[] = db.shipmentTrackingUpdates || [];
     const now = new Date().toISOString();
-
-    const updatedLogs = logsList.map((l) => (l.id === log.id ? { ...l, status: nextStatus } : l));
 
     const newHistory: StageHistory = {
       id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -540,22 +532,16 @@ function PlanDetail({
       notes: "",
     };
 
-    writeDb({
-      ...db,
-      dispatchLogs: updatedLogs,
-      tireHistory: [...historyList, newHistory],
-      shipmentTrackingUpdates: [...trackingList, newTracking],
-    });
+    await updateDispatchLogStatus(log.id, nextStatus);
+    await insertTireHistory([newHistory]);
+    await insertShipmentTrackingUpdates([newTracking]);
 
     onRefresh();
   };
 
-  const handleDispatchTruck = () => {
-    const db = readDb();
-    const plansList: DispatchPlan[] = db.dispatchPlans || [];
+  const handleDispatchTruck = async () => {
     const now = new Date().toISOString();
-    const updatedPlans = plansList.map((p) => (p.id === plan.id ? { ...p, status: "dispatched" as const, dispatchedAt: now } : p));
-    writeDb({ ...db, dispatchPlans: updatedPlans });
+    await updateDispatchPlanStatus(plan.id, "dispatched", now);
     onRefresh();
     onBack();
   };

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ArrowUpFromLine, Warehouse as WarehouseIcon } from "lucide-react";
-import { readDb, writeDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import QtyStepper from "@/components/qty-stepper";
 import SuccessOverlay from "@/components/success-overlay";
 import { binForLocation, PICKED_LOCATION, type WarehouseDef } from "@/data/warehouse-bins";
+import { insertTireHistory } from "@/lib/tire-history";
 import { fetchTires, upsertTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { StageHistory, Tire } from "@/types/tire";
@@ -182,9 +182,7 @@ export default function TireOutward() {
       };
     });
 
-    const db = readDb();
-    const historyList: StageHistory[] = db.tireHistory || [];
-    writeDb({ ...db, tireHistory: [...historyList, ...newHistory] });
+    await insertTireHistory(newHistory);
 
     setTires((prev) => {
       const byId = new Map(prev.map((t) => [t.id, t]));

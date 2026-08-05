@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ArrowDownToLine, Search, Warehouse as WarehouseIcon, X } from "lucide-react";
-import { readDb, writeDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
 import QtyStepper from "@/components/qty-stepper";
 import SuccessOverlay from "@/components/success-overlay";
 import { firstEmptyBin, locationForBin, occupiedBins, type WarehouseDef } from "@/data/warehouse-bins";
+import { insertPlacementLogs } from "@/lib/placement-logs";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
+import { insertTireHistory } from "@/lib/tire-history";
 import { fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
 import { fetchTires, upsertTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
@@ -170,14 +171,8 @@ export default function TireInward() {
       notes: `Inward: ${a.model} moved to ${locationForBin(selectedWarehouse, a.bin)}`,
     }));
 
-    const db = readDb();
-    const historyList: StageHistory[] = db.tireHistory || [];
-    const logsList: PlacementLog[] = db.placementLogs || [];
-    writeDb({
-      ...db,
-      tireHistory: [...historyList, ...newHistory],
-      placementLogs: [...logsList, ...newLogs],
-    });
+    await insertTireHistory(newHistory);
+    await insertPlacementLogs(newLogs);
 
     setTires((prev) => {
       const byId = new Map(prev.map((t) => [t.id, t]));
@@ -297,16 +292,8 @@ export default function TireInward() {
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
-              <div className="flex items-center gap-4">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="size-3 rounded bg-info/70 inline-block" /> Empty
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="size-3 rounded bg-danger/70 inline-block" /> Full
-                </span>
-              </div>
-              <span>Tap to select multiple bins</span>
+            <div className="flex items-center justify-end gap-4 text-xs text-muted-foreground">
+              <span>Tap to select — bins can stack multiple tires</span>
             </div>
 
             <div className="overflow-auto max-h-96 rounded-xl border border-border">
@@ -333,20 +320,17 @@ export default function TireInward() {
                           if (row > maxRow) return <td key={colIdx} />;
                           const col = colIdx + 1;
                           const code = `${selectedWarehouse.prefix}${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`;
-                          const isFull = occupied.has(code);
                           const isSelected = selectedBins.has(code);
                           return (
                             <td key={colIdx} className="p-0.5">
                               <button
                                 type="button"
-                                disabled={isFull}
                                 onClick={() => toggleBin(code)}
-                                title={isFull ? `${code} — full` : code}
+                                title={code}
                                 className={cn(
                                   "flex h-8 w-12 items-center justify-center rounded text-[9px] font-bold leading-none text-white transition-colors",
-                                  isFull && "bg-danger/70 cursor-not-allowed",
-                                  !isFull && !isSelected && "bg-info/70 hover:bg-info",
-                                  isSelected && !isFull && "bg-success ring-2 ring-success ring-offset-1",
+                                  !isSelected && "bg-info/70 hover:bg-info",
+                                  isSelected && "bg-success ring-2 ring-success ring-offset-1",
                                 )}
                               >
                                 {String(col).padStart(2, "0")}-{String(row).padStart(2, "0")}
