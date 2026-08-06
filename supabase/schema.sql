@@ -1,7 +1,7 @@
 -- SKU catalog table: Material / Tire Description-Brand / Ply Rating Bottom / Brand.
 -- Run this once in the Supabase SQL Editor (Project -> SQL Editor -> New query).
 -- After running it, use Table Editor -> tire_skus -> Insert -> Import data from CSV
--- to load your spreadsheet (columns must map to material, description, ply_rating_bottom, brand).
+-- to load your spreadsheet (columns must map to material, description, ply_rating_bottom, brands).
 
 create table if not exists public.tire_skus (
   id bigint generated always as identity primary key,
