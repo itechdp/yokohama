@@ -32,6 +32,7 @@ export default function TireInward() {
   const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
 
   const [success, setSuccess] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchTires().then(setTires);
@@ -85,13 +86,21 @@ export default function TireInward() {
   };
 
   const handleConfirm = async () => {
+    if (submitting) return;
+    setSubmitting(true);
     setSuccess(null);
-    if (selectedTires.length === 0 || !selectedWarehouse) return;
+    if (selectedTires.length === 0 || !selectedWarehouse) {
+      setSubmitting(false);
+      return;
+    }
 
     // No bin tapped — just use the next empty one so this never blocks.
     const binsArray =
       selectedBins.size > 0 ? Array.from(selectedBins).sort() : [firstEmptyBin(selectedWarehouse, occupied)].filter(Boolean) as string[];
-    if (binsArray.length === 0) return;
+    if (binsArray.length === 0) {
+      setSubmitting(false);
+      return;
+    }
 
     const now = new Date().toISOString();
     const assignments: { tireId: string; bin: string; model: string }[] = [];
@@ -149,6 +158,7 @@ export default function TireInward() {
     const { error } = await upsertTires(tiresToSave);
     if (error) {
       setSuccess(null);
+      setSubmitting(false);
       return;
     }
 
@@ -184,6 +194,7 @@ export default function TireInward() {
     setSuccess(
       `${assignments.length} tire${assignments.length === 1 ? "" : "s"} across ${selectedTires.length} type${selectedTires.length === 1 ? "" : "s"} placed across ${binsArray.length} bin${binsArray.length === 1 ? "" : "s"} in ${selectedWarehouse.label}.`,
     );
+    setSubmitting(false);
   };
 
   return (
@@ -347,10 +358,10 @@ export default function TireInward() {
 
       <button
         onClick={handleConfirm}
-        disabled={selectedTires.length === 0}
+        disabled={selectedTires.length === 0 || submitting}
         className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        OK - Confirm inward
+        {submitting ? "Confirming…" : "OK - Confirm inward"}
       </button>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />

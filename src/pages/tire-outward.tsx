@@ -28,6 +28,7 @@ export default function TireOutward() {
   const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
 
   const [success, setSuccess] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchTires().then(setTires);
@@ -124,8 +125,13 @@ export default function TireOutward() {
   };
 
   const handleConfirm = async () => {
+    if (submitting) return;
+    setSubmitting(true);
     setSuccess(null);
-    if (selectedGroups.length === 0) return;
+    if (selectedGroups.length === 0) {
+      setSubmitting(false);
+      return;
+    }
 
     const remaining: Record<string, number> = {};
     for (const g of selectedGroups) remaining[g.key] = selectedQty[g.key] || 0;
@@ -166,6 +172,7 @@ export default function TireOutward() {
     const { error } = await upsertTires(updatedTires);
     if (error) {
       setSuccess(null);
+      setSubmitting(false);
       return;
     }
 
@@ -194,6 +201,7 @@ export default function TireOutward() {
     setSuccess(
       `${withdrawals.length} tire${withdrawals.length === 1 ? "" : "s"} across ${selectedGroups.length} type${selectedGroups.length === 1 ? "" : "s"} picked, ready for dispatch.`,
     );
+    setSubmitting(false);
   };
 
   return (
@@ -405,10 +413,10 @@ export default function TireOutward() {
 
       <button
         onClick={handleConfirm}
-        disabled={selectedGroups.length === 0}
+        disabled={selectedGroups.length === 0 || submitting}
         className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        OK - Confirm outward
+        {submitting ? "Confirming…" : "OK - Confirm outward"}
       </button>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />

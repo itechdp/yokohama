@@ -18,6 +18,7 @@ export default function PendingTyreDetail() {
   const [showForm, setShowForm] = useState(false);
   const [receivingId, setReceivingId] = useState<number | null>(null);
   const [receiveQty, setReceiveQty] = useState("");
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     fetchPlanPendingTires().then((all) => setEntries(all.filter((t) => t.planNo === planNo)));
@@ -26,8 +27,11 @@ export default function PendingTyreDetail() {
   const total = entries.reduce((sum, t) => sum + t.qty, 0);
 
   const handleAdd = async (tire: string, qty: number) => {
+    if (adding) return;
+    setAdding(true);
     const { row } = await addPlanPendingTire(planNo, tire, qty);
     if (row) setEntries((prev) => [...prev, row]);
+    setAdding(false);
     setShowForm(false);
   };
 
@@ -91,7 +95,9 @@ export default function PendingTyreDetail() {
         {total > 0 ? `${total} tyre pending` : "No tyre pending"}
       </p>
 
-      {showForm && <AddPendingTireForm onSubmit={handleAdd} onCancel={() => setShowForm(false)} />}
+      {showForm && (
+        <AddPendingTireForm onSubmit={handleAdd} onCancel={() => setShowForm(false)} submitting={adding} />
+      )}
 
       {entries.length > 0 && (
         <ul className="space-y-2">
@@ -171,9 +177,11 @@ export default function PendingTyreDetail() {
 function AddPendingTireForm({
   onSubmit,
   onCancel,
+  submitting,
 }: {
   onSubmit: (tire: string, qty: number) => void;
   onCancel: () => void;
+  submitting: boolean;
 }) {
   const SUGGESTIONS_PAGE_SIZE = 30;
 
@@ -222,6 +230,7 @@ function AddPendingTireForm({
   };
 
   const handleSubmit = () => {
+    if (submitting) return;
     const trimmedTire = tire.trim();
     const qtyNum = Number(qty) || 0;
     if (!trimmedTire || qtyNum <= 0) return;
@@ -284,9 +293,10 @@ function AddPendingTireForm({
         <button
           type="button"
           onClick={handleSubmit}
-          className="flex-1 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90"
+          disabled={submitting}
+          className="flex-1 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Save
+          {submitting ? "Saving…" : "Save"}
         </button>
         <button
           type="button"

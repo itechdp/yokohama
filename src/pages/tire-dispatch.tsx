@@ -374,6 +374,7 @@ function PlanDetail({
   const [selectedQty, setSelectedQty] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const planLogs = useMemo(
     () => dispatchLogs.filter((l) => l.planId === plan.id),
@@ -433,21 +434,26 @@ function PlanDetail({
   };
 
   const handleAddToPlan = async () => {
+    if (submitting) return;
+    setSubmitting(true);
     setError(null);
     setSuccess(null);
 
     if (selectedGroups.length === 0) {
       setError("Select at least one tire.");
+      setSubmitting(false);
       return;
     }
     for (const g of selectedGroups) {
       const qty = Number.parseInt(selectedQty[g.key] || "0", 10);
       if (Number.isNaN(qty) || qty < 1) {
         setError(`Enter a valid quantity for ${g.model}.`);
+        setSubmitting(false);
         return;
       }
       if (qty > g.tireIds.length) {
         setError(`Only ${g.tireIds.length} available for ${g.model}.`);
+        setSubmitting(false);
         return;
       }
     }
@@ -468,6 +474,7 @@ function PlanDetail({
     const { error: tiresError } = await upsertTires(updatedTires);
     if (tiresError) {
       setError(`Failed to update tire stage: ${tiresError}`);
+      setSubmitting(false);
       return;
     }
 
@@ -498,6 +505,7 @@ function PlanDetail({
 
     setSelectedQty({});
     setSuccess(`${chosenIds.length} tire${chosenIds.length === 1 ? "" : "s"} added to this plan.`);
+    setSubmitting(false);
     onRefresh();
   };
 
@@ -664,9 +672,10 @@ function PlanDetail({
 
           <button
             onClick={handleAddToPlan}
-            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            disabled={submitting}
+            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            Add to plan
+            {submitting ? "Adding…" : "Add to plan"}
           </button>
         </div>
       )}
