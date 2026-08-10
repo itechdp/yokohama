@@ -30,6 +30,9 @@ export default function TireInward() {
   const [selectedTires, setSelectedTires] = useState<SelectedTire[]>([]);
   const [warehouseKey, setWarehouseKey] = useState("");
   const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
+  const [manualRow, setManualRow] = useState("");
+  const [manualCol, setManualCol] = useState("");
+  const [manualError, setManualError] = useState<string | null>(null);
 
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -76,6 +79,20 @@ export default function TireInward() {
   );
   const maxRows = selectedWarehouse ? Math.max(...selectedWarehouse.columnRowCounts) : 0;
 
+  const columnOptions = useMemo(
+    () => (selectedWarehouse ? selectedWarehouse.columnRowCounts.map((_, i) => i + 1) : []),
+    [selectedWarehouse],
+  );
+
+  const rowOptions = useMemo(() => {
+    if (!selectedWarehouse) return [];
+    if (manualCol) {
+      const max = selectedWarehouse.columnRowCounts[Number(manualCol) - 1] ?? 0;
+      return Array.from({ length: max }, (_, i) => i + 1);
+    }
+    return Array.from({ length: maxRows }, (_, i) => i + 1);
+  }, [selectedWarehouse, manualCol, maxRows]);
+
   const toggleBin = (code: string) => {
     setSelectedBins((prev) => {
       const next = new Set(prev);
@@ -83,6 +100,19 @@ export default function TireInward() {
       else next.add(code);
       return next;
     });
+  };
+
+  const addManualLocation = () => {
+    if (!selectedWarehouse || !manualRow || !manualCol) return;
+    const code = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`;
+    if (selectedBins.has(code)) {
+      setManualError("Location already selected");
+      return;
+    }
+    setSelectedBins((prev) => new Set(prev).add(code));
+    setManualRow("");
+    setManualCol("");
+    setManualError(null);
   };
 
   const handleConfirm = async () => {
@@ -275,6 +305,9 @@ export default function TireInward() {
               onClick={() => {
                 setWarehouseKey(w.key);
                 setSelectedBins(new Set());
+                setManualRow("");
+                setManualCol("");
+                setManualError(null);
               }}
               className={cn(
                 "rounded-xl border px-4 py-3 text-sm font-medium transition-colors",
@@ -290,7 +323,123 @@ export default function TireInward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">3. Storage bins</h2>
+        <h2 className="text-base font-medium text-foreground">3. Select storage location</h2>
+        {!selectedWarehouse ? (
+          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
+            Choose a warehouse first.
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              {/* COLUMN FIRST */}
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-foreground">
+                  Select Column
+                </span>
+
+                <select
+                  value={manualCol}
+                  onChange={(e) => {
+                    const col = e.target.value;
+
+                    setManualCol(col);
+                    setManualError(null);
+
+                    // Validate selected row against the selected column
+                    if (col && manualRow) {
+                      const max =
+                        selectedWarehouse.columnRowCounts[Number(col) - 1] ?? 0;
+
+                      if (Number(manualRow) > max) {
+                        setManualRow("");
+                      }
+                    }
+                  }}
+                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">Select column</option>
+
+                  {columnOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {String(c).padStart(2, "0")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* ROW SECOND */}
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-foreground">
+                  Select Row
+                </span>
+
+                <select
+                  value={manualRow}
+                  onChange={(e) => {
+                    setManualRow(e.target.value);
+                    setManualError(null);
+                  }}
+                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">Select row</option>
+
+                  {rowOptions.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {manualError && (
+              <p className="text-xs text-danger">
+                {manualError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={addManualLocation}
+              disabled={!manualCol || !manualRow}
+              className="w-full sm:w-auto rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Add Location
+            </button>
+
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium text-foreground">Selected locations</p>
+              {selectedBins.size === 0 ? (
+                <p className="text-xs text-muted-foreground">No locations selected yet.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(selectedBins)
+                    .sort()
+                    .map((code) => (
+                      <span
+                        key={code}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-xs font-medium text-success"
+                      >
+                        {code}
+                        <button
+                          type="button"
+                          onClick={() => toggleBin(code)}
+                          aria-label={`Remove ${code}`}
+                          className="text-success hover:text-danger"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </span>
+                    ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
+        <h2 className="text-base font-medium text-foreground">4. Storage bins</h2>
         {!selectedWarehouse ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
             Choose a warehouse first.
@@ -346,12 +495,6 @@ export default function TireInward() {
               </table>
             </div>
 
-            {selectedBins.size > 0 && (
-              <p className="text-sm text-foreground">
-                Selected bins:{" "}
-                <span className="font-medium">{Array.from(selectedBins).sort().join(", ")}</span>
-              </p>
-            )}
           </>
         )}
       </div>
