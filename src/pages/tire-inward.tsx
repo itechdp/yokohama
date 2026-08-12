@@ -331,10 +331,10 @@ export default function TireInward() {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3">
-              {/* COLUMN FIRST */}
+              {/* ROW FIRST */}
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium text-foreground">
-                  Select Column
+                  Select Row
                 </span>
 
                 <select
@@ -357,7 +357,7 @@ export default function TireInward() {
                   }}
                   className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 >
-                  <option value="">Select column</option>
+                  <option value="">Select row</option>
 
                   {columnOptions.map((c) => (
                     <option key={c} value={c}>
@@ -367,10 +367,10 @@ export default function TireInward() {
                 </select>
               </label>
 
-              {/* ROW SECOND */}
+              {/* POSITION SECOND */}
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium text-foreground">
-                  Select Row
+                  Select Position
                 </span>
 
                 <select
@@ -381,7 +381,7 @@ export default function TireInward() {
                   }}
                   className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 >
-                  <option value="">Select row</option>
+                  <option value="">Select position</option>
 
                   {rowOptions.map((r) => (
                     <option key={r} value={r}>
