@@ -1,5 +1,6 @@
 import {
   ArrowDownToLine,
+  ArrowLeftRight,
   ArrowUpFromLine,
   History,
   LayoutGrid,
@@ -21,6 +22,7 @@ export interface NavItem {
 export const FEATURE_ITEMS: NavItem[] = [
   { to: "/tires/inward", label: "Inward", icon: ArrowDownToLine },
   { to: "/tires/outward", label: "Outward", icon: ArrowUpFromLine },
+  { to: "/tires/exchange", label: "Exchange Location", icon: ArrowLeftRight },
   { to: "/tires/skus", label: "Show tire", icon: List },
   { to: "/tires/dispatch", label: "Dispatch", icon: Truck },
   { to: "/bays", label: "Loading Bay", icon: LayoutGrid },
