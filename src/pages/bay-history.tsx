@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ArrowLeft, CalendarDays, Download, History } from "lucide-react";
 import * as XLSX from "xlsx";
+import SelectMenu from "@/components/select-menu";
 import { fetchClosedOnDate, fetchMonthlyReport, formatIst, todayIst } from "@/lib/bay-history";
 import { cn } from "@/lib/utils";
 import { BAY_COUNT, BAY_STATUS_LABELS, type BayHistorySession } from "@/types/tire";
@@ -137,18 +138,16 @@ export default function BayHistory() {
           />
         )}
 
-        <select
-          value={bayFilter}
-          onChange={(e) => setBayFilter(e.target.value === "all" ? "all" : Number(e.target.value))}
-          className="flex-1 min-w-[7rem] rounded-xl border border-border bg-card py-2 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="all">All bays</option>
-          {Array.from({ length: BAY_COUNT }, (_, i) => i + 1).map((b) => (
-            <option key={b} value={b}>
-              Bay {b}
-            </option>
-          ))}
-        </select>
+        <SelectMenu
+          value={String(bayFilter)}
+          placeholder="All bays"
+          options={[
+            { value: "all", label: "All bays" },
+            ...Array.from({ length: BAY_COUNT }, (_, i) => i + 1).map((b) => ({ value: String(b), label: `Bay ${b}` })),
+          ]}
+          onChange={(v) => setBayFilter(v === "all" ? "all" : Number(v))}
+          className="flex-1 min-w-[7rem]"
+        />
       </div>
 
       <button

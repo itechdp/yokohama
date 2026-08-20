@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Check, Grid3x3, Pencil, Plus, Trash2, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import SelectMenu from "@/components/select-menu";
 import { deleteWarehouse, fetchWarehouses, upsertWarehouse } from "@/lib/warehouses";
 import type { WarehouseDef } from "@/data/warehouse-bins";
 
@@ -208,7 +209,7 @@ export default function Warehouses() {
             <p className="text-[10px] text-muted-foreground">
               Stands = how many stands (1 or 2) the picker shows for every area in that column. Floor count is fixed and isn't set here.
             </p>
-            <div className="flex flex-wrap gap-2 max-h-56 overflow-y-auto rounded-xl border border-border p-2">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 max-h-56 overflow-y-auto rounded-xl border border-border p-2">
               {form.columnRowCounts.map((count, i) => {
                 const standCount = standCountForColumn(form, i);
                 return (
@@ -221,22 +222,13 @@ export default function Warehouses() {
                       onChange={(e) => updateColumn(i, Number(e.target.value.replace(/\D/g, "")) || 0)}
                       className="w-10 bg-transparent text-center text-sm text-foreground focus:outline-none"
                     />
-                    <div className="flex rounded-md border border-border overflow-hidden">
-                      {[1, 2].map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          onClick={() => updateStandCount(i, n)}
-                          className={cn(
-                            "px-1.5 py-0.5 text-[10px] font-semibold transition-colors",
-                            standCount === n ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
-                          )}
-                          aria-label={`${n} stand${n === 1 ? "" : "s"} for column ${i + 1}`}
-                        >
-                          {n}
-                        </button>
-                      ))}
-                    </div>
+                    <SelectMenu
+                      value={String(standCount)}
+                      placeholder="Stands"
+                      options={[1, 2, 3].map((n) => ({ value: String(n), label: String(n) }))}
+                      onChange={(v) => updateStandCount(i, Number(v))}
+                      className="w-14"
+                    />
                     <button
                       type="button"
                       onClick={() => removeColumn(i)}

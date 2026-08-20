@@ -4,9 +4,10 @@ import { ArrowDownToLine, ArrowLeftRight, Search, Warehouse as WarehouseIcon, X 
 import { cn } from "@/lib/utils";
 import ExchangeLocationModal from "@/components/exchange-location-modal";
 import QtyStepper from "@/components/qty-stepper";
+import SelectMenu from "@/components/select-menu";
 import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
-import { binCounts, FLOOR_COUNT, firstEmptyBin, locationForBin, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
+import { BIN_CAPACITY, binCounts, FLOOR_COUNT, firstEmptyBin, locationForBin, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
 import { insertTireHistory } from "@/lib/tire-history";
@@ -152,7 +153,26 @@ export default function TireInward() {
     const now = new Date().toISOString();
     const assignments: { tireId: string; bin: string; model: string }[] = [];
     const extraTires: Tire[] = [];
-    let i = 0;
+
+    // Round-robin across the selected bins, but never past BIN_CAPACITY —
+    // once every selected bin is full, spill into the next bin in the
+    // warehouse that still has room.
+    const workingCounts = new Map(counts);
+    let bi = 0;
+    const nextBin = (): string => {
+      for (let attempts = 0; attempts < binsArray.length; attempts++) {
+        const b = binsArray[bi % binsArray.length];
+        bi++;
+        if ((workingCounts.get(b) ?? 0) < BIN_CAPACITY) {
+          workingCounts.set(b, (workingCounts.get(b) ?? 0) + 1);
+          return b;
+        }
+      }
+      const spill = firstEmptyBin(selectedWarehouse, workingCounts) ?? binsArray[0];
+      workingCounts.set(spill, (workingCounts.get(spill) ?? 0) + 1);
+      return spill;
+    };
+
     for (const t of selectedTires) {
       // Consume any matching production-stage units already on record first,
       // then synthesize the rest fresh from the tire catalog (Supabase).
@@ -162,8 +182,7 @@ export default function TireInward() {
         .map((existing) => existing.id);
 
       for (const tireId of existingIds) {
-        assignments.push({ tireId, bin: binsArray[i % binsArray.length], model: t.model });
-        i++;
+        assignments.push({ tireId, bin: nextBin(), model: t.model });
       }
 
       const shortfall = t.qty - existingIds.length;
@@ -180,8 +199,7 @@ export default function TireInward() {
           now,
         );
         extraTires.push(tire);
-        assignments.push({ tireId: id, bin: binsArray[i % binsArray.length], model: t.model });
-        i++;
+        assignments.push({ tireId: id, bin: nextBin(), model: t.model });
       }
     }
 
@@ -367,11 +385,11 @@ export default function TireInward() {
                   Select Row
                 </span>
 
-                <select
+                <SelectMenu
                   value={manualCol}
-                  onChange={(e) => {
-                    const col = e.target.value;
-
+                  placeholder="Select row"
+                  options={columnOptions.map((c) => ({ value: String(c), label: String(c).padStart(2, "0") }))}
+                  onChange={(col) => {
                     setManualCol(col);
                     setManualStand("");
                     setManualError(null);
@@ -386,16 +404,7 @@ export default function TireInward() {
                       }
                     }
                   }}
-                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">Select row</option>
-
-                  {columnOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {String(c).padStart(2, "0")}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
 
               {/* POSITION SECOND */}
@@ -404,22 +413,15 @@ export default function TireInward() {
                   Select Position
                 </span>
 
-                <select
+                <SelectMenu
                   value={manualRow}
-                  onChange={(e) => {
-                    setManualRow(e.target.value);
+                  placeholder="Select position"
+                  options={rowOptions.map((r) => ({ value: String(r), label: String(r) }))}
+                  onChange={(row) => {
+                    setManualRow(row);
                     setManualError(null);
                   }}
-                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">Select position</option>
-
-                  {rowOptions.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
 
               {/* STAND — only shown when this column has a second stand; otherwise auto-picked as X */}
@@ -427,22 +429,15 @@ export default function TireInward() {
                 <label className="block space-y-1.5">
                   <span className="text-sm font-medium text-foreground">Select Stand</span>
 
-                  <select
+                  <SelectMenu
                     value={manualStand}
-                    onChange={(e) => {
-                      setManualStand(e.target.value);
+                    placeholder="Select stand"
+                    options={standOptions.map((s) => ({ value: s, label: s }))}
+                    onChange={(stand) => {
+                      setManualStand(stand);
                       setManualError(null);
                     }}
-                    className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    <option value="">Select stand</option>
-
-                    {standOptions.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
               )}
 
@@ -450,22 +445,15 @@ export default function TireInward() {
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium text-foreground">Select Floor</span>
 
-                <select
+                <SelectMenu
                   value={manualFloor}
-                  onChange={(e) => {
-                    setManualFloor(e.target.value);
+                  placeholder="Select floor"
+                  options={floorOptions.map((f) => ({ value: String(f), label: `Floor ${f}` }))}
+                  onChange={(floor) => {
+                    setManualFloor(floor);
                     setManualError(null);
                   }}
-                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">Select floor</option>
-
-                  {floorOptions.map((f) => (
-                    <option key={f} value={f}>
-                      Floor {f}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             </div>
 

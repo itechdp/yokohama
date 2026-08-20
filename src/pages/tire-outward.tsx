@@ -105,8 +105,9 @@ export default function TireOutward() {
   const legacyOccupantForArea = (areaCode: string): Occupant | undefined => {
     if (!selectedWarehouse || !occupied.has(areaCode)) return undefined;
     const location = locationForBin(selectedWarehouse, areaCode);
-    const tire = tires.find((t) => t.currentStage === "warehouse" && t.location === location);
-    return tire ? { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code: areaCode } : undefined;
+    const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
+    const tire = atBin[0];
+    return tire ? { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code: areaCode, count: atBin.length } : undefined;
   };
 
   const removeBin = (code: string) => {
@@ -134,8 +135,9 @@ export default function TireOutward() {
       if (!code.startsWith(`${areaCode}-`)) continue;
       const shortCode = code.slice(areaCode.length + 1);
       const location = locationForBin(selectedWarehouse, code);
-      const tire = tires.find((t) => t.currentStage === "warehouse" && t.location === location);
-      if (tire) result[shortCode] = { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code };
+      const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
+      const tire = atBin[0];
+      if (tire) result[shortCode] = { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code, count: atBin.length };
     }
     return result;
   };
@@ -406,6 +408,7 @@ export default function TireOutward() {
           occupants={occupantsForArea(pickerAreaCode)}
           legacyOccupant={legacyOccupantForArea(pickerAreaCode)}
           selectedCodes={selectedBins}
+          selectedModels={selectedModels}
           onToggle={toggleBinForRemoval}
           onDone={() => setPickerAreaCode(null)}
         />

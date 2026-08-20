@@ -12,6 +12,7 @@ import {
   Truck,
   User,
 } from "lucide-react";
+import SelectMenu from "@/components/select-menu";
 import { fetchDispatchLogs, insertDispatchLogs, updateDispatchLogStatus } from "@/lib/dispatch-logs";
 import { fetchDispatchPlans, insertDispatchPlan, updateDispatchPlanStatus } from "@/lib/dispatch-plans";
 import { insertShipmentTrackingUpdates } from "@/lib/shipment-tracking";
@@ -256,18 +257,12 @@ function PlanList({
               <MapPin className="size-4 text-muted-foreground" />
               Destination
             </label>
-            <select
+            <SelectMenu
               value={destination}
-              onChange={(e) => handleDestinationChange(e.target.value)}
-              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="">Choose a destination</option>
-              {DEALER_DESTINATIONS.map((loc) => (
-                <option key={loc} value={loc}>
-                  {loc}
-                </option>
-              ))}
-            </select>
+              placeholder="Choose a destination"
+              options={DEALER_DESTINATIONS.map((loc) => ({ value: loc, label: loc }))}
+              onChange={handleDestinationChange}
+            />
             {destination === "Other" && (
               <input
                 type="text"

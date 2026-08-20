@@ -18,7 +18,7 @@ export interface WarehouseDef {
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-export const STAND_IDS = ["X", "Y"] as const;
+export const STAND_IDS = ["X", "Y", "Z"] as const;
 export const FLOOR_COUNT = 6;
 
 // How many tires one stand+floor slot ("plate") can physically hold.

@@ -6,7 +6,13 @@ const FLOORS = [6, 5, 4, 3, 2, 1] as const;
 const ALL_STANDS = [
   { id: "X", label: "X Row (Front)", occupied: "#93C5FD", top: "#DBEAFE", side: "#60A5FA", text: "#1E3A8A" },
   { id: "Y", label: "Y Row (Back)", occupied: "#86EFAC", top: "#DCFCE7", side: "#4ADE80", text: "#14532D" },
+  { id: "Z", label: "Z Row (Rear)", occupied: "#C4B5FD", top: "#EDE9FE", side: "#A78BFA", text: "#4C1D95" },
 ] as const;
+
+// Used instead of the X/Y row colors once a tire type is selected in step 1 —
+// bins get colored by whether they hold that type, not by which row they're in.
+const OTHER_TYPE_STYLE = { occupied: "#93C5FD", top: "#DBEAFE", side: "#60A5FA", text: "#1E3A8A" };
+const SELECTED_TYPE_STYLE = { occupied: "#F87171", top: "#FECACA", side: "#EF4444", text: "#7F1D1D" };
 
 const BLOCK_W = 74;
 const BLOCK_H = 40;
@@ -49,6 +55,9 @@ export interface Occupant {
   // pre-split code instead. Always toggle/select using this, never a
   // reconstructed "<areaCode>-<shortCode>", or the toggle silently no-ops.
   code: string;
+  // How many tires actually sit in this bin — a slot can hold up to
+  // BIN_CAPACITY, so this can be >1 even though only one tire's info is shown.
+  count: number;
 }
 
 // Outward's version of the stand/floor picker: unlike Inward's (which lets
@@ -63,6 +72,7 @@ export default function StandFloorRemovePicker({
   occupants,
   legacyOccupant,
   selectedCodes,
+  selectedModels,
   onToggle,
   onDone,
 }: {
@@ -74,10 +84,14 @@ export default function StandFloorRemovePicker({
   // grid below. Shown as its own removable row instead.
   legacyOccupant?: Occupant;
   selectedCodes: Set<string>;
+  // Tire type(s) picked in step 1, if any — when set, bins are colored by
+  // whether they hold a selected type (red) or not (blue) instead of by row.
+  selectedModels?: Set<string>;
   onToggle: (code: string) => void;
   onDone: () => void;
 }) {
   const STANDS = ALL_STANDS.slice(0, standCount);
+  const hasTypeSelection = !!selectedModels && selectedModels.size > 0;
   const selectedHere = STANDS.flatMap((s) => FLOORS.map((f) => `${s.id}${f}`)).filter((c) => {
     const occ = occupants[c];
     return occ && selectedCodes.has(occ.code);
@@ -118,14 +132,25 @@ export default function StandFloorRemovePicker({
           </button>
         )}
 
-        <div className="flex items-center justify-center gap-3 text-[11px] font-semibold">
-          {STANDS.map((s) => (
-            <span key={s.id} className="inline-flex items-center gap-1">
-              <span className="size-2.5 rounded-sm" style={{ backgroundColor: s.occupied }} />
-              <span style={{ color: s.text }}>{s.label}</span>
+        {hasTypeSelection ? (
+          <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-3 rounded bg-info/70 inline-block" /> Other tires
             </span>
-          ))}
-        </div>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-3 rounded bg-danger/70 inline-block" /> Selected type here
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center gap-3 text-[11px] font-semibold">
+            {STANDS.map((s) => (
+              <span key={s.id} className="inline-flex items-center gap-1">
+                <span className="size-2.5 rounded-sm" style={{ backgroundColor: s.occupied }} />
+                <span style={{ color: s.text }}>{s.label}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="rounded-xl bg-muted/40 p-2">
           <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="w-full h-auto select-none" role="group" aria-label="Storage stand">
@@ -147,6 +172,8 @@ export default function StandFloorRemovePicker({
                   const occupant = occupants[shortCode];
                   const isOccupied = !!occupant;
                   const isSelected = isOccupied && selectedCodes.has(occupant.code);
+                  const isMatchingType = isOccupied && hasTypeSelection && selectedModels!.has(occupant.model);
+                  const style = hasTypeSelection ? (isMatchingType ? SELECTED_TYPE_STYLE : OTHER_TYPE_STYLE) : s;
                   const b = blockFor(standIndex, floor);
                   return (
                     <g
@@ -163,15 +190,15 @@ export default function StandFloorRemovePicker({
                       style={{ transformOrigin: `${b.labelX}px ${b.labelY}px` }}
                     >
                       <title>{isOccupied ? `${displayCode} — ${occupant.model} (${occupant.serialNumber})` : `${displayCode} — empty`}</title>
-                      <polygon points={b.topFace} fill={isOccupied ? s.top : "#E5E7EB"} stroke="#00000014" />
-                      <polygon points={b.sideFace} fill={isOccupied ? s.side : "#D1D5DB"} stroke="#00000014" />
+                      <polygon points={b.topFace} fill={isOccupied ? style.top : "#E5E7EB"} stroke="#00000014" />
+                      <polygon points={b.sideFace} fill={isOccupied ? style.side : "#D1D5DB"} stroke="#00000014" />
                       <rect
                         x={b.front.x}
                         y={b.front.y}
                         width={b.front.w}
                         height={b.front.h}
                         rx={3}
-                        fill={isOccupied ? s.occupied : "#F3F4F6"}
+                        fill={isOccupied ? style.occupied : "#F3F4F6"}
                         stroke={isSelected ? "#16A34A" : "#00000014"}
                         strokeWidth={isSelected ? 3 : 1}
                         opacity={isOccupied ? 1 : 0.6}
@@ -183,7 +210,7 @@ export default function StandFloorRemovePicker({
                         dominantBaseline="central"
                         fontSize={13}
                         fontWeight={800}
-                        fill={isOccupied ? s.text : "#9CA3AF"}
+                        fill={isOccupied ? style.text : "#9CA3AF"}
                       >
                         {shortCode}
                       </text>
@@ -211,6 +238,7 @@ export default function StandFloorRemovePicker({
                 return (
                   <li key={c}>
                     {c}: {occ?.model} · {occ?.serialNumber}
+                    {occ && occ.count > 1 ? ` (${occ.count} tires)` : ""}
                   </li>
                 );
               })}

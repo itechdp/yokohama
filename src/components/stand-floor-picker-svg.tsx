@@ -11,6 +11,7 @@ const FLOORS = [6, 5, 4, 3, 2, 1] as const;
 const ALL_STANDS = [
   { id: "X", label: "X Row (Front)", front: "#93C5FD", top: "#DBEAFE", side: "#60A5FA", text: "#1E3A8A" },
   { id: "Y", label: "Y Row (Back)", front: "#86EFAC", top: "#DCFCE7", side: "#4ADE80", text: "#14532D" },
+  { id: "Z", label: "Z Row (Rear)", front: "#C4B5FD", top: "#EDE9FE", side: "#A78BFA", text: "#4C1D95" },
 ] as const;
 
 const BLOCK_W = 74;
