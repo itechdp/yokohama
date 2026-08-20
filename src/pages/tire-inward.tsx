@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { ArrowDownToLine, Search, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, Search, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import ExchangeLocationModal from "@/components/exchange-location-modal";
 import QtyStepper from "@/components/qty-stepper";
 import SuccessOverlay from "@/components/success-overlay";
 import { firstEmptyBin, locationForBin, occupiedBins, type WarehouseDef } from "@/data/warehouse-bins";
@@ -36,6 +37,7 @@ export default function TireInward() {
 
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [exchangeOpen, setExchangeOpen] = useState(false);
 
   useEffect(() => {
     fetchTires().then(setTires);
@@ -284,10 +286,21 @@ export default function TireInward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
-          <WarehouseIcon className="size-4 text-muted-foreground" />
-          2. Warehouse
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
+            <WarehouseIcon className="size-4 text-muted-foreground" />
+            2. Warehouse
+          </h2>
+          <button
+            type="button"
+            onClick={() => setExchangeOpen(true)}
+            aria-label="Exchange location"
+            title="Exchange location"
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-muted transition-colors shrink-0"
+          >
+            <ArrowLeftRight className="size-4" />
+          </button>
+        </div>
         {warehouses.length === 0 && (
           <p className="text-sm text-muted-foreground">
             No warehouses set up yet — add one on the{" "}
@@ -508,6 +521,21 @@ export default function TireInward() {
       </button>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
+
+      <ExchangeLocationModal
+        open={exchangeOpen}
+        onClose={() => setExchangeOpen(false)}
+        warehouses={warehouses}
+        tires={tires}
+        onTiresUpdated={(updated) => {
+          setTires((prev) => {
+            const byId = new Map(prev.map((t) => [t.id, t]));
+            for (const t of updated) byId.set(t.id, t);
+            return Array.from(byId.values());
+          });
+          setSuccess(`${updated.length} tire${updated.length === 1 ? "" : "s"} exchanged location.`);
+        }}
+      />
     </div>
   );
 }

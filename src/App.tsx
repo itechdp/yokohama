@@ -7,7 +7,6 @@ import PendingTyreDetail from "@/pages/pending-tyre-detail";
 import PendingTyrePlans from "@/pages/pending-tyre-plans";
 import TireBulkUpload from "@/pages/tire-bulk-upload";
 import TireDispatch from "@/pages/tire-dispatch";
-import TireExchange from "@/pages/tire-exchange";
 import TireInward from "@/pages/tire-inward";
 import TireNew from "@/pages/tire-new";
 import TireOutward from "@/pages/tire-outward";
@@ -24,7 +23,6 @@ export default function App() {
         <Route path="/tires/bulk-upload" element={<TireBulkUpload />} />
         <Route path="/tires/inward" element={<TireInward />} />
         <Route path="/tires/outward" element={<TireOutward />} />
-        <Route path="/tires/exchange" element={<TireExchange />} />
         <Route path="/tires/dispatch" element={<TireDispatch />} />
         <Route path="/bays" element={<BayBooking />} />
         <Route path="/bays/history" element={<BayHistory />} />
