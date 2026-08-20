@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Check, Grid3x3, Pencil, Plus, Trash2, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { deleteWarehouse, fetchWarehouses, upsertWarehouse } from "@/lib/warehouses";
 import type { WarehouseDef } from "@/data/warehouse-bins";
 
 function emptyForm(): WarehouseDef {
   return { key: "", label: "", prefix: "", columnRowCounts: [10] };
+}
+
+// Stand count (1 or 2) for a column, defaulting to 1 when the warehouse
+// hasn't configured it yet.
+function standCountForColumn(form: WarehouseDef, colIndex: number): number {
+  return form.columnStandCounts?.[colIndex] ?? 1;
 }
 
 function slugify(label: string): string {
@@ -48,7 +55,7 @@ export default function Warehouses() {
   };
 
   const startEdit = (w: WarehouseDef) => {
-    setForm({ ...w, columnRowCounts: [...w.columnRowCounts] });
+    setForm({ ...w, columnRowCounts: [...w.columnRowCounts], columnStandCounts: w.columnStandCounts ? [...w.columnStandCounts] : undefined });
     setIsNew(false);
     setError(null);
   };
@@ -77,7 +84,24 @@ export default function Warehouses() {
   };
 
   const removeColumn = (index: number) => {
-    setForm((f) => (f ? { ...f, columnRowCounts: f.columnRowCounts.filter((_, i) => i !== index) } : f));
+    setForm((f) => {
+      if (!f) return f;
+      const columnRowCounts = f.columnRowCounts.filter((_, i) => i !== index);
+      const columnStandCounts = f.columnStandCounts?.filter((_, i) => i !== index);
+      return { ...f, columnRowCounts, columnStandCounts };
+    });
+  };
+
+  // Sets how many stands (1 or 2) the picker shows for every area in a
+  // column. Lazily materializes the full array (every column = 1) the first
+  // time any column gets set to 2.
+  const updateStandCount = (colIndex: number, value: number) => {
+    setForm((f) => {
+      if (!f) return f;
+      const columnStandCounts = f.columnRowCounts.map((_, i) => standCountForColumn(f, i));
+      columnStandCounts[colIndex] = value;
+      return { ...f, columnStandCounts };
+    });
   };
 
   const handleSave = async () => {
@@ -101,7 +125,13 @@ export default function Warehouses() {
     }
 
     setSaving(true);
-    const { error: saveError } = await upsertWarehouse({ key, label, prefix, columnRowCounts: form.columnRowCounts });
+    const { error: saveError } = await upsertWarehouse({
+      key,
+      label,
+      prefix,
+      columnRowCounts: form.columnRowCounts,
+      columnStandCounts: form.columnStandCounts,
+    });
     setSaving(false);
 
     if (saveError) {
@@ -164,7 +194,7 @@ export default function Warehouses() {
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                 <Grid3x3 className="size-3.5" />
-                Columns ({form.columnRowCounts.length}) · rows per column
+                Columns ({form.columnRowCounts.length}) · rows · stands per column
               </label>
               <button
                 type="button"
@@ -175,27 +205,49 @@ export default function Warehouses() {
                 Add column
               </button>
             </div>
+            <p className="text-[10px] text-muted-foreground">
+              Stands = how many stands (1 or 2) the picker shows for every area in that column. Floor count is fixed and isn't set here.
+            </p>
             <div className="flex flex-wrap gap-2 max-h-56 overflow-y-auto rounded-xl border border-border p-2">
-              {form.columnRowCounts.map((count, i) => (
-                <div key={i} className="flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1">
-                  <span className="text-[10px] font-medium text-muted-foreground">{String(i + 1).padStart(2, "0")}</span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={count}
-                    onChange={(e) => updateColumn(i, Number(e.target.value.replace(/\D/g, "")) || 0)}
-                    className="w-10 bg-transparent text-center text-sm text-foreground focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeColumn(i)}
-                    className="text-muted-foreground hover:text-danger"
-                    aria-label={`Remove column ${i + 1}`}
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                </div>
-              ))}
+              {form.columnRowCounts.map((count, i) => {
+                const standCount = standCountForColumn(form, i);
+                return (
+                  <div key={i} className="flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1">
+                    <span className="text-[10px] font-medium text-muted-foreground">{String(i + 1).padStart(2, "0")}</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={count}
+                      onChange={(e) => updateColumn(i, Number(e.target.value.replace(/\D/g, "")) || 0)}
+                      className="w-10 bg-transparent text-center text-sm text-foreground focus:outline-none"
+                    />
+                    <div className="flex rounded-md border border-border overflow-hidden">
+                      {[1, 2].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => updateStandCount(i, n)}
+                          className={cn(
+                            "px-1.5 py-0.5 text-[10px] font-semibold transition-colors",
+                            standCount === n ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+                          )}
+                          aria-label={`${n} stand${n === 1 ? "" : "s"} for column ${i + 1}`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeColumn(i)}
+                      className="text-muted-foreground hover:text-danger"
+                      aria-label={`Remove column ${i + 1}`}
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

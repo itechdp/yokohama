@@ -4,8 +4,9 @@ import { ArrowDownToLine, ArrowLeftRight, Search, Warehouse as WarehouseIcon, X 
 import { cn } from "@/lib/utils";
 import ExchangeLocationModal from "@/components/exchange-location-modal";
 import QtyStepper from "@/components/qty-stepper";
+import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
-import { firstEmptyBin, locationForBin, occupiedBins, type WarehouseDef } from "@/data/warehouse-bins";
+import { binCounts, FLOOR_COUNT, firstEmptyBin, locationForBin, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
 import { insertTireHistory } from "@/lib/tire-history";
@@ -33,11 +34,14 @@ export default function TireInward() {
   const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
   const [manualRow, setManualRow] = useState("");
   const [manualCol, setManualCol] = useState("");
+  const [manualStand, setManualStand] = useState("");
+  const [manualFloor, setManualFloor] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
 
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [exchangeOpen, setExchangeOpen] = useState(false);
+  const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTires().then(setTires);
@@ -75,8 +79,8 @@ export default function TireInward() {
   const totalQty = selectedTires.reduce((sum, t) => sum + t.qty, 0);
 
   const selectedWarehouse = warehouses.find((w) => w.key === warehouseKey) || null;
-  const occupied = useMemo(
-    () => (selectedWarehouse ? occupiedBins(selectedWarehouse, tires) : new Set<string>()),
+  const counts = useMemo(
+    () => (selectedWarehouse ? binCounts(selectedWarehouse, tires) : new Map<string, number>()),
     [selectedWarehouse, tires],
   );
   const maxRows = selectedWarehouse ? Math.max(...selectedWarehouse.columnRowCounts) : 0;
@@ -95,6 +99,12 @@ export default function TireInward() {
     return Array.from({ length: maxRows }, (_, i) => i + 1);
   }, [selectedWarehouse, manualCol, maxRows]);
 
+  // How many stands the chosen column has — 1 means Stand is auto-picked as
+  // X with no dropdown shown, 2 means the operator picks X or Y.
+  const manualStandCount = selectedWarehouse && manualCol ? standCountAt(selectedWarehouse, Number(manualCol)) : 1;
+  const standOptions = STAND_IDS.slice(0, manualStandCount);
+  const floorOptions = useMemo(() => Array.from({ length: FLOOR_COUNT }, (_, i) => i + 1), []);
+
   const toggleBin = (code: string) => {
     setSelectedBins((prev) => {
       const next = new Set(prev);
@@ -105,8 +115,11 @@ export default function TireInward() {
   };
 
   const addManualLocation = () => {
-    if (!selectedWarehouse || !manualRow || !manualCol) return;
-    const code = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`;
+    if (!selectedWarehouse || !manualRow || !manualCol || !manualFloor) return;
+    const stand = manualStandCount > 1 ? manualStand : "X";
+    if (!stand) return;
+    const areaCode = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`;
+    const code = `${areaCode}-${stand}${manualFloor}`;
     if (selectedBins.has(code)) {
       setManualError("Location already selected");
       return;
@@ -114,6 +127,8 @@ export default function TireInward() {
     setSelectedBins((prev) => new Set(prev).add(code));
     setManualRow("");
     setManualCol("");
+    setManualStand("");
+    setManualFloor("");
     setManualError(null);
   };
 
@@ -128,7 +143,7 @@ export default function TireInward() {
 
     // No bin tapped — just use the next empty one so this never blocks.
     const binsArray =
-      selectedBins.size > 0 ? Array.from(selectedBins).sort() : [firstEmptyBin(selectedWarehouse, occupied)].filter(Boolean) as string[];
+      selectedBins.size > 0 ? Array.from(selectedBins).sort() : [firstEmptyBin(selectedWarehouse, counts)].filter(Boolean) as string[];
     if (binsArray.length === 0) {
       setSubmitting(false);
       return;
@@ -320,6 +335,8 @@ export default function TireInward() {
                 setSelectedBins(new Set());
                 setManualRow("");
                 setManualCol("");
+                setManualStand("");
+                setManualFloor("");
                 setManualError(null);
               }}
               className={cn(
@@ -356,6 +373,7 @@ export default function TireInward() {
                     const col = e.target.value;
 
                     setManualCol(col);
+                    setManualStand("");
                     setManualError(null);
 
                     // Validate selected row against the selected column
@@ -403,6 +421,52 @@ export default function TireInward() {
                   ))}
                 </select>
               </label>
+
+              {/* STAND — only shown when this column has a second stand; otherwise auto-picked as X */}
+              {manualStandCount > 1 && (
+                <label className="block space-y-1.5">
+                  <span className="text-sm font-medium text-foreground">Select Stand</span>
+
+                  <select
+                    value={manualStand}
+                    onChange={(e) => {
+                      setManualStand(e.target.value);
+                      setManualError(null);
+                    }}
+                    className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="">Select stand</option>
+
+                    {standOptions.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {/* FLOOR — always required */}
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-foreground">Select Floor</span>
+
+                <select
+                  value={manualFloor}
+                  onChange={(e) => {
+                    setManualFloor(e.target.value);
+                    setManualError(null);
+                  }}
+                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">Select floor</option>
+
+                  {floorOptions.map((f) => (
+                    <option key={f} value={f}>
+                      Floor {f}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             {manualError && (
@@ -414,7 +478,7 @@ export default function TireInward() {
             <button
               type="button"
               onClick={addManualLocation}
-              disabled={!manualCol || !manualRow}
+              disabled={!manualCol || !manualRow || !manualFloor || (manualStandCount > 1 && !manualStand)}
               className="w-full sm:w-auto rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Add Location
@@ -483,17 +547,17 @@ export default function TireInward() {
                           if (row > maxRow) return <td key={colIdx} />;
                           const col = colIdx + 1;
                           const code = `${selectedWarehouse.prefix}${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`;
-                          const isSelected = selectedBins.has(code);
+                          const hasPick = Array.from(selectedBins).some((b) => b.startsWith(`${code}-`));
                           return (
                             <td key={colIdx} className="p-0.5">
                               <button
                                 type="button"
-                                onClick={() => toggleBin(code)}
+                                onClick={() => setPickerAreaCode(code)}
                                 title={code}
                                 className={cn(
                                   "flex h-8 w-12 items-center justify-center rounded text-[9px] font-bold leading-none text-white transition-colors",
-                                  !isSelected && "bg-info/70 hover:bg-info",
-                                  isSelected && "bg-success ring-2 ring-success ring-offset-1",
+                                  !hasPick && "bg-info/70 hover:bg-info",
+                                  hasPick && "bg-success ring-2 ring-success ring-offset-1",
                                 )}
                               >
                                 {String(col).padStart(2, "0")}-{String(row).padStart(2, "0")}
@@ -536,6 +600,24 @@ export default function TireInward() {
           setSuccess(`${updated.length} tire${updated.length === 1 ? "" : "s"} exchanged location.`);
         }}
       />
+
+      {pickerAreaCode && selectedWarehouse && (
+        <StandFloorPicker
+          areaCode={pickerAreaCode}
+          standCount={standCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
+          slotCounts={Object.fromEntries(
+            Array.from(counts.entries())
+              .filter(([bin]) => bin.startsWith(`${pickerAreaCode}-`))
+              .map(([bin, n]) => [bin.slice(pickerAreaCode.length + 1), n]),
+          )}
+          selectedCode={Array.from(selectedBins).find((b) => b.startsWith(`${pickerAreaCode}-`)) ?? null}
+          onSelect={(code) => {
+            toggleBin(code);
+            setPickerAreaCode(null);
+          }}
+          onClose={() => setPickerAreaCode(null)}
+        />
+      )}
     </div>
   );
 }

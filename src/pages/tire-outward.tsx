@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowUpFromLine, Warehouse as WarehouseIcon } from "lucide-react";
+import { ArrowUpFromLine, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import QtyStepper from "@/components/qty-stepper";
+import StandFloorRemovePicker, { type Occupant } from "@/components/stand-floor-remove-picker";
 import SuccessOverlay from "@/components/success-overlay";
-import { binForLocation, PICKED_LOCATION, type WarehouseDef } from "@/data/warehouse-bins";
+import { binForLocation, locationForBin, occupiedBins, PICKED_LOCATION, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertTireHistory } from "@/lib/tire-history";
 import { fetchTires, upsertTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
@@ -16,16 +16,16 @@ interface TireGroup {
   material?: string;
   brand?: string;
   plyRatingBottom?: string;
-  tireIds: string[];
 }
 
 export default function TireOutward() {
   const [tires, setTires] = useState<Tire[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
-  const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [warehouseKey, setWarehouseKey] = useState("");
   const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
+  const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
 
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -40,52 +40,29 @@ export default function TireOutward() {
 
   // Only tires actually sitting in a bin right now (not already picked/dispatched).
   const candidates = useMemo(
-    () =>
-      tires.filter(
-        (t) => t.currentStage === "warehouse" && warehouses.some((w) => binForLocation(w, t.location)),
-      ),
+    () => tires.filter((t) => t.currentStage === "warehouse" && warehouses.some((w) => binForLocation(w, t.location))),
     [tires, warehouses],
   );
 
   const groups = useMemo(() => {
     const map = new Map<string, TireGroup>();
     for (const t of candidates) {
-      const key = t.model;
-      const existing = map.get(key);
-      if (existing) {
-        existing.tireIds.push(t.id);
-      } else {
-        map.set(key, {
-          key,
-          model: t.model,
-          material: t.serialNumber,
-          brand: t.brand,
-          plyRatingBottom: t.plyRatingBottom,
-          tireIds: [t.id],
-        });
-      }
+      if (map.has(t.model)) continue;
+      map.set(t.model, { key: t.model, model: t.model, material: t.serialNumber, brand: t.brand, plyRatingBottom: t.plyRatingBottom });
     }
     return Array.from(map.values()).sort((a, b) => a.model.localeCompare(b.model));
   }, [candidates]);
 
-  const selectedGroups = useMemo(() => groups.filter((g) => g.key in selectedQty), [groups, selectedQty]);
-  const selectedModels = useMemo(() => new Set(selectedGroups.map((g) => g.model)), [selectedGroups]);
-  const totalQty = selectedGroups.reduce((sum, g) => sum + (selectedQty[g.key] || 0), 0);
-
-  const toggleGroup = (key: string) => {
-    setSelectedQty((prev) => {
-      const next = { ...prev };
-      if (key in next) delete next[key];
-      else next[key] = 1;
+  const toggleModel = (model: string) => {
+    setSelectedModels((prev) => {
+      const next = new Set(prev);
+      if (next.has(model)) next.delete(model);
+      else next.add(model);
       return next;
     });
   };
 
-  const setQty = (key: string, value: number) => {
-    setSelectedQty((prev) => ({ ...prev, [key]: value }));
-  };
-
-  // How much of the searched/selected tires sits in each warehouse — helps pick the right one.
+  // How much of the selected model(s) sits in each warehouse — helps pick the right one.
   const warehouseCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const w of warehouses) counts[w.key] = 0;
@@ -99,23 +76,48 @@ export default function TireOutward() {
   }, [candidates, selectedModels, warehouses]);
 
   const selectedWarehouse = warehouses.find((w) => w.key === warehouseKey) || null;
+  const occupied = useMemo(
+    () => (selectedWarehouse ? occupiedBins(selectedWarehouse, tires) : new Set<string>()),
+    [selectedWarehouse, tires],
+  );
   const maxRows = selectedWarehouse ? Math.max(...selectedWarehouse.columnRowCounts) : 0;
 
-  // bin code -> count of the selected tire types sitting there right now.
-  const binMatches = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!selectedWarehouse || selectedModels.size === 0) return map;
-    for (const t of candidates) {
-      if (!selectedModels.has(t.model)) continue;
-      const bin = binForLocation(selectedWarehouse, t.location);
-      if (!bin) continue;
-      map.set(bin, (map.get(bin) || 0) + 1);
-    }
-    return map;
-  }, [candidates, selectedWarehouse, selectedModels]);
+  // Whether an area code is occupied — either a real stand+floor bin under
+  // it ("AREA-X6") or, for tires placed before that tracking existed, the
+  // bare area code itself ("AREA") with no suffix at all.
+  const areaHasOccupancy = (areaCode: string) => occupied.has(areaCode) || Array.from(occupied).some((b) => b.startsWith(`${areaCode}-`));
 
-  const toggleBin = (code: string) => {
-    if (!binMatches.has(code)) return;
+  // Whether an area (any of its occupied slots, including a legacy bare-area
+  // tire) holds a selected model.
+  const areaMatchesSelection = (areaCode: string) => {
+    if (!selectedWarehouse || selectedModels.size === 0) return false;
+    for (const code of occupied) {
+      if (code !== areaCode && !code.startsWith(`${areaCode}-`)) continue;
+      const location = locationForBin(selectedWarehouse, code);
+      const tire = tires.find((t) => t.currentStage === "warehouse" && t.location === location);
+      if (tire && selectedModels.has(tire.model)) return true;
+    }
+    return false;
+  };
+
+  // The tire sitting directly at the bare area code, if any — pre-existing
+  // stock placed before stand/floor tracking existed.
+  const legacyOccupantForArea = (areaCode: string): Occupant | undefined => {
+    if (!selectedWarehouse || !occupied.has(areaCode)) return undefined;
+    const location = locationForBin(selectedWarehouse, areaCode);
+    const tire = tires.find((t) => t.currentStage === "warehouse" && t.location === location);
+    return tire ? { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code: areaCode } : undefined;
+  };
+
+  const removeBin = (code: string) => {
+    setSelectedBins((prev) => {
+      const next = new Set(prev);
+      next.delete(code);
+      return next;
+    });
+  };
+
+  const toggleBinForRemoval = (code: string) => {
     setSelectedBins((prev) => {
       const next = new Set(prev);
       if (next.has(code)) next.delete(code);
@@ -124,70 +126,49 @@ export default function TireOutward() {
     });
   };
 
+  // Which tire (if any) sits at each stand+floor slot in the currently open area.
+  const occupantsForArea = (areaCode: string): Record<string, Occupant | undefined> => {
+    if (!selectedWarehouse) return {};
+    const result: Record<string, Occupant | undefined> = {};
+    for (const code of occupied) {
+      if (!code.startsWith(`${areaCode}-`)) continue;
+      const shortCode = code.slice(areaCode.length + 1);
+      const location = locationForBin(selectedWarehouse, code);
+      const tire = tires.find((t) => t.currentStage === "warehouse" && t.location === location);
+      if (tire) result[shortCode] = { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code };
+    }
+    return result;
+  };
+
+  const selectedTires = useMemo(() => {
+    if (!selectedWarehouse) return [];
+    const locations = new Set(Array.from(selectedBins).map((code) => locationForBin(selectedWarehouse, code)));
+    return tires.filter((t) => t.currentStage === "warehouse" && locations.has(t.location));
+  }, [selectedWarehouse, selectedBins, tires]);
+
   const handleConfirm = async () => {
-    if (submitting) return;
+    if (submitting || selectedTires.length === 0) return;
     setSubmitting(true);
     setSuccess(null);
-    if (selectedGroups.length === 0) {
-      setSubmitting(false);
-      return;
-    }
-
-    const remaining: Record<string, number> = {};
-    for (const g of selectedGroups) remaining[g.key] = selectedQty[g.key] || 0;
-
-    const withdrawals: { tireId: string; bin: string | null; model: string }[] = [];
-
-    // Priority 1: pull from bins the operator actually tapped.
-    if (selectedWarehouse) {
-      for (const bin of Array.from(selectedBins).sort()) {
-        const tiresInBin = candidates.filter((t) => binForLocation(selectedWarehouse, t.location) === bin);
-        for (const t of tiresInBin) {
-          const group = selectedGroups.find((g) => g.model === t.model);
-          if (!group || (remaining[group.key] || 0) <= 0) continue;
-          withdrawals.push({ tireId: t.id, bin, model: t.model });
-          remaining[group.key]--;
-        }
-      }
-    }
-
-    // Priority 2: auto top-up the rest from wherever that tire actually sits —
-    // the quantity picker already caps at total stock, so this always succeeds.
-    const alreadyPicked = new Set(withdrawals.map((w) => w.tireId));
-    for (const g of selectedGroups) {
-      if ((remaining[g.key] || 0) <= 0) continue;
-      const more = g.tireIds.filter((id) => !alreadyPicked.has(id)).slice(0, remaining[g.key]);
-      for (const tireId of more) {
-        withdrawals.push({ tireId, bin: null, model: g.model });
-        remaining[g.key]--;
-      }
-    }
 
     const now = new Date().toISOString();
-    const withdrawnIds = new Set(withdrawals.map((w) => w.tireId));
-    const updatedTires = tires
-      .filter((t) => withdrawnIds.has(t.id))
-      .map((t) => ({ ...t, location: PICKED_LOCATION, updatedAt: now }));
+    const updatedTires = selectedTires.map((t) => ({ ...t, location: PICKED_LOCATION, updatedAt: now }));
 
     const { error } = await upsertTires(updatedTires);
     if (error) {
-      setSuccess(null);
       setSubmitting(false);
       return;
     }
 
-    const newHistory: StageHistory[] = withdrawals.map((w, idx) => {
-      const fromTire = tires.find((t) => t.id === w.tireId);
-      return {
-        id: `h-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
-        tireId: w.tireId,
-        stage: "warehouse",
-        location: PICKED_LOCATION,
-        movedAt: now,
-        movedBy: "Forklift operator",
-        notes: `Outward: ${w.model} picked from ${fromTire?.location || "warehouse"}`,
-      };
-    });
+    const newHistory: StageHistory[] = selectedTires.map((t, idx) => ({
+      id: `h-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+      tireId: t.id,
+      stage: "warehouse",
+      location: PICKED_LOCATION,
+      movedAt: now,
+      movedBy: "Forklift operator",
+      notes: `Outward: ${t.model} picked from ${t.location}`,
+    }));
 
     await insertTireHistory(newHistory);
 
@@ -196,11 +177,8 @@ export default function TireOutward() {
       for (const t of updatedTires) byId.set(t.id, t);
       return Array.from(byId.values());
     });
-    setSelectedQty({});
     setSelectedBins(new Set());
-    setSuccess(
-      `${withdrawals.length} tire${withdrawals.length === 1 ? "" : "s"} across ${selectedGroups.length} type${selectedGroups.length === 1 ? "" : "s"} picked, ready for dispatch.`,
-    );
+    setSuccess(`${selectedTires.length} tire${selectedTires.length === 1 ? "" : "s"} picked, ready for dispatch.`);
     setSubmitting(false);
   };
 
@@ -223,59 +201,39 @@ export default function TireOutward() {
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">1. Select tires</h2>
+        <p className="text-xs text-muted-foreground">
+          Pick a tire type to highlight where it's stored — you'll still tap the exact bin to remove it.
+        </p>
 
         {groups.length === 0 ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
-            No tires currently in the warehouse.
-          </div>
+          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">No tires currently in the warehouse.</div>
         ) : (
-          <ul className="space-y-2 max-h-96 overflow-y-auto">
+          <ul className="space-y-2 max-h-72 overflow-y-auto">
             {groups.map((g) => {
-              const isSelected = g.key in selectedQty;
+              const isSelected = selectedModels.has(g.model);
               return (
                 <li
                   key={g.key}
-                  onClick={() => toggleGroup(g.key)}
+                  onClick={() => toggleModel(g.model)}
                   className={cn(
-                    "rounded-xl border px-4 py-3 text-sm transition-colors cursor-pointer",
+                    "flex items-center gap-3 rounded-xl border px-4 py-3 text-sm transition-colors cursor-pointer",
                     isSelected ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-muted",
                   )}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex flex-1 items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        readOnly
-                        className="size-5 rounded border-border text-primary focus:ring-ring pointer-events-none"
-                      />
-                      <div>
-                        <p className="font-medium text-foreground">{g.model}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {[g.material, g.brand, g.plyRatingBottom].filter(Boolean).join(" · ")}
-                        </p>
-                      </div>
-                    </div>
-                    <span className="inline-flex items-center rounded-full bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger shrink-0">
-                      {g.tireIds.length} in stock
-                    </span>
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    readOnly
+                    className="size-5 rounded border-border text-primary focus:ring-ring pointer-events-none"
+                  />
+                  <div>
+                    <p className="font-medium text-foreground">{g.model}</p>
+                    <p className="text-xs text-muted-foreground">{[g.material, g.brand, g.plyRatingBottom].filter(Boolean).join(" · ")}</p>
                   </div>
-                  {isSelected && (
-                    <div className="mt-3 pl-8" onClick={(e) => e.stopPropagation()}>
-                      <QtyStepper value={selectedQty[g.key]} onChange={(v) => setQty(g.key, v)} max={g.tireIds.length} />
-                    </div>
-                  )}
                 </li>
               );
             })}
           </ul>
-        )}
-
-        {selectedGroups.length > 0 && (
-          <p className="text-xs text-muted-foreground">
-            {totalQty} tire{totalQty === 1 ? "" : "s"} selected across {selectedGroups.length} type
-            {selectedGroups.length === 1 ? "" : "s"}
-          </p>
         )}
       </div>
 
@@ -326,29 +284,23 @@ export default function TireOutward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">3. Pick bins</h2>
+        <h2 className="text-base font-medium text-foreground">3. Pick tires to remove</h2>
         {!selectedWarehouse ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
-            Choose a warehouse first.
-          </div>
-        ) : selectedModels.size === 0 ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
-            Select a tire above — matching bins will light up red.
-          </div>
+          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">Choose a warehouse first.</div>
+        ) : occupied.size === 0 ? (
+          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">No tires currently in this warehouse.</div>
         ) : (
           <>
-            <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
-              <div className="flex items-center gap-4">
+            {selectedModels.size > 0 && (
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="size-3 rounded bg-info/70 inline-block" /> Not this tire
+                  <span className="size-3 rounded bg-info/70 inline-block" /> Other tires
                 </span>
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="size-3 rounded bg-danger/70 inline-block" /> Here — qty shown
+                  <span className="size-3 rounded bg-danger/70 inline-block" /> Selected type here
                 </span>
               </div>
-              <span>Tap red bins to pick from</span>
-            </div>
-
+            )}
             <div className="overflow-auto max-h-96 rounded-xl border border-border">
               <table className="border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-card">
@@ -366,30 +318,30 @@ export default function TireOutward() {
                     const row = rowIdx + 1;
                     return (
                       <tr key={row}>
-                        <td className="sticky left-0 z-10 bg-card px-1 py-1 text-center text-muted-foreground">
-                          {row}
-                        </td>
+                        <td className="sticky left-0 z-10 bg-card px-1 py-1 text-center text-muted-foreground">{row}</td>
                         {selectedWarehouse.columnRowCounts.map((maxRow, colIdx) => {
                           if (row > maxRow) return <td key={colIdx} />;
                           const col = colIdx + 1;
                           const code = `${selectedWarehouse.prefix}${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`;
-                          const matchCount = binMatches.get(code) || 0;
-                          const hasMatch = matchCount > 0;
-                          const isSelected = selectedBins.has(code);
+                          const hasOccupancy = areaHasOccupancy(code);
+                          const hasPick = Array.from(selectedBins).some((b) => b === code || b.startsWith(`${code}-`));
+                          const isMatch = hasOccupancy && areaMatchesSelection(code);
                           return (
                             <td key={colIdx} className="p-0.5">
                               <button
                                 type="button"
-                                disabled={!hasMatch}
-                                onClick={() => toggleBin(code)}
-                                title={hasMatch ? `${code} — ${matchCount} here` : `${code} — not this tire`}
+                                disabled={!hasOccupancy}
+                                onClick={() => setPickerAreaCode(code)}
+                                title={hasOccupancy ? code : `${code} — empty`}
                                 className={cn(
-                                  "flex h-8 w-12 items-center justify-center rounded text-[9px] font-medium leading-none text-white/90 transition-colors",
-                                  hasMatch ? "bg-danger/70 hover:bg-danger" : "bg-info/70 cursor-not-allowed",
-                                  isSelected && "ring-2 ring-primary ring-offset-1",
+                                  "flex h-8 w-12 items-center justify-center rounded text-[9px] font-bold leading-none text-white transition-colors",
+                                  !hasOccupancy && "bg-muted text-muted-foreground/40 cursor-not-allowed",
+                                  hasOccupancy && !hasPick && !isMatch && "bg-info/70 hover:bg-info",
+                                  hasOccupancy && !hasPick && isMatch && "bg-danger/70 hover:bg-danger",
+                                  hasPick && "bg-success ring-2 ring-success ring-offset-1 hover:bg-success",
                                 )}
                               >
-                                {hasMatch ? matchCount : `${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`}
+                                {String(col).padStart(2, "0")}-{String(row).padStart(2, "0")}
                               </button>
                             </td>
                           );
@@ -400,26 +352,64 @@ export default function TireOutward() {
                 </tbody>
               </table>
             </div>
-
-            {selectedBins.size > 0 && (
-              <p className="text-sm text-foreground">
-                Selected bins:{" "}
-                <span className="font-medium">{Array.from(selectedBins).sort().join(", ")}</span>
-              </p>
-            )}
           </>
+        )}
+
+        {selectedTires.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-sm font-medium text-foreground">Picked for outward ({selectedTires.length})</p>
+            <ul className="max-h-56 overflow-y-auto space-y-1.5">
+              {Array.from(selectedBins)
+                .sort()
+                .map((code) => {
+                  const location = selectedWarehouse ? locationForBin(selectedWarehouse, code) : "";
+                  const tire = tires.find((t) => t.location === location);
+                  return (
+                    <li
+                      key={code}
+                      className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground truncate">{code}</p>
+                        <p className="text-muted-foreground truncate">{tire?.model}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeBin(code)}
+                        aria-label={`Remove ${code} from selection`}
+                        className="shrink-0 text-muted-foreground hover:text-danger"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </li>
+                  );
+                })}
+            </ul>
+          </div>
         )}
       </div>
 
       <button
         onClick={handleConfirm}
-        disabled={selectedGroups.length === 0 || submitting}
+        disabled={selectedTires.length === 0 || submitting}
         className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         {submitting ? "Confirming…" : "OK - Confirm outward"}
       </button>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
+
+      {pickerAreaCode && selectedWarehouse && (
+        <StandFloorRemovePicker
+          areaCode={pickerAreaCode}
+          standCount={standCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
+          occupants={occupantsForArea(pickerAreaCode)}
+          legacyOccupant={legacyOccupantForArea(pickerAreaCode)}
+          selectedCodes={selectedBins}
+          onToggle={toggleBinForRemoval}
+          onDone={() => setPickerAreaCode(null)}
+        />
+      )}
     </div>
   );
 }
