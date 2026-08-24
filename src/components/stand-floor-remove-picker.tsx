@@ -1,13 +1,28 @@
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { STAND_IDS } from "@/data/warehouse-bins";
 
-const FLOORS = [6, 5, 4, 3, 2, 1] as const;
+function floorsDescending(floorCount: number): number[] {
+  return Array.from({ length: floorCount }, (_, i) => floorCount - i);
+}
 
-const ALL_STANDS = [
-  { id: "X", label: "X Row (Front)", occupied: "#93C5FD", top: "#DBEAFE", side: "#60A5FA", text: "#1E3A8A" },
-  { id: "Y", label: "Y Row (Back)", occupied: "#86EFAC", top: "#DCFCE7", side: "#4ADE80", text: "#14532D" },
-  { id: "Z", label: "Z Row (Rear)", occupied: "#C4B5FD", top: "#EDE9FE", side: "#A78BFA", text: "#4C1D95" },
-] as const;
+// Hand-picked, visually distinct colors for the first 8 stands; cycles
+// beyond that (stands beyond 8 are still distinguishable by their letter).
+const STAND_PALETTE = [
+  { occupied: "#93C5FD", top: "#DBEAFE", side: "#60A5FA", text: "#1E3A8A" }, // blue
+  { occupied: "#86EFAC", top: "#DCFCE7", side: "#4ADE80", text: "#14532D" }, // green
+  { occupied: "#C4B5FD", top: "#EDE9FE", side: "#A78BFA", text: "#4C1D95" }, // purple
+  { occupied: "#FCA5A5", top: "#FEE2E2", side: "#F87171", text: "#7F1D1D" }, // red
+  { occupied: "#FCD34D", top: "#FEF3C7", side: "#FBBF24", text: "#78350F" }, // amber
+  { occupied: "#67E8F9", top: "#CFFAFE", side: "#22D3EE", text: "#164E63" }, // cyan
+  { occupied: "#F9A8D4", top: "#FCE7F3", side: "#F472B6", text: "#831843" }, // pink
+  { occupied: "#BEF264", top: "#ECFCCB", side: "#A3E635", text: "#365314" }, // lime
+];
+
+// Every stand id paired with its style, in order — used both to render a
+// specific stand count and to look up a stand's index (for orphan detection
+// below) regardless of how many are currently configured.
+const ALL_STANDS = STAND_IDS.map((id, i) => ({ id, label: `${id} Row`, ...STAND_PALETTE[i % STAND_PALETTE.length] }));
 
 // Used instead of the X/Y row colors once a tire type is selected in step 1 —
 // bins get colored by whether they hold that type, not by which row they're in.
@@ -25,17 +40,26 @@ const STAND_STEP_Y = -16;
 const FLOOR_STEP_Y = 48;
 
 const ORIGIN_X = 104;
-const ORIGIN_Y = 372;
+const MARGIN_TOP = 40;
+const MARGIN_BOTTOM = 40;
+const MARGIN_RIGHT = 40;
 
-const VIEW_W = 390;
-const VIEW_H = 430;
+// View width grows with stand count so a wide column (many stands) never
+// gets clipped or forces the modal to overflow — the SVG renders at its
+// natural pixel size and the wrapper scrolls instead (see also
+// stand-floor-picker-svg.tsx, which has the same geometry).
+function computeGeometry(floorCount: number, standCount: number) {
+  const originY = MARGIN_TOP + (standCount - 1) * Math.abs(STAND_STEP_Y) + (floorCount - 1) * FLOOR_STEP_Y + BLOCK_H - DEPTH_DY;
+  const viewW = ORIGIN_X + (standCount - 1) * STAND_STEP_X + BLOCK_W + DEPTH_DX + MARGIN_RIGHT;
+  return { originY, viewH: originY + MARGIN_BOTTOM, viewW };
+}
 
 const floorLabel = (floor: number) =>
   floor === 1 ? "1st Floor (Ground)" : `${floor}${floor === 2 ? "nd" : floor === 3 ? "rd" : "th"} Floor`;
 
-function blockFor(standIndex: number, floor: number) {
+function blockFor(standIndex: number, floor: number, originY: number) {
   const fx = ORIGIN_X + standIndex * STAND_STEP_X;
-  const fy = ORIGIN_Y + standIndex * STAND_STEP_Y - (floor - 1) * FLOOR_STEP_Y;
+  const fy = originY + standIndex * STAND_STEP_Y - (floor - 1) * FLOOR_STEP_Y;
   const top = fy - BLOCK_H;
   return {
     front: { x: fx, y: top, w: BLOCK_W, h: BLOCK_H },
@@ -55,20 +79,25 @@ export interface Occupant {
   // pre-split code instead. Always toggle/select using this, never a
   // reconstructed "<areaCode>-<shortCode>", or the toggle silently no-ops.
   code: string;
-  // How many tires actually sit in this bin — a slot can hold up to
-  // BIN_CAPACITY, so this can be >1 even though only one tire's info is shown.
+  // How many tires actually sit in this bin — no capacity limit, so this can
+  // be >1 even though only one tire's info is shown.
   count: number;
+  // Model of every tire actually sitting in this bin (may repeat) — used for
+  // type-match highlighting, since `model` alone only reflects the first
+  // tire and would miss a match sitting behind it in the same bin.
+  models: string[];
 }
 
 // Outward's version of the stand/floor picker: unlike Inward's (which lets
 // you pick ANY position to place into), this only lets you pick stand+floor
 // slots that actually have a tire in them right now — tapping one toggles
-// it into the removal list, so X1 can be pulled while X2, Y1, etc. stay
+// it into the removal list, so A1 can be pulled while A2, B1, etc. stay
 // exactly as they are. Multi-select within one area, closed explicitly via
 // Done, since you may want to remove several tires from the same area.
 export default function StandFloorRemovePicker({
   areaCode,
   standCount,
+  floorCount,
   occupants,
   legacyOccupant,
   selectedCodes,
@@ -78,6 +107,7 @@ export default function StandFloorRemovePicker({
 }: {
   areaCode: string;
   standCount: number;
+  floorCount: number;
   occupants: Record<string, Occupant | undefined>;
   // A tire placed before stand/floor tracking existed — its location is the
   // bare area code with no stand+floor suffix, so it can't slot into the
@@ -90,13 +120,26 @@ export default function StandFloorRemovePicker({
   onToggle: (code: string) => void;
   onDone: () => void;
 }) {
-  const STANDS = ALL_STANDS.slice(0, standCount);
+  // If a warehouse's stand/floor count was reduced after tires were already
+  // placed under the old, larger layout, those occupied slots must still be
+  // shown — otherwise the stock becomes invisible and impossible to select
+  // for removal even though it's still physically there.
+  const occupiedShortCodes = Object.keys(occupants).filter((c) => occupants[c]);
+  const occupiedStandIndex = occupiedShortCodes.reduce((max, c) => Math.max(max, ALL_STANDS.findIndex((s) => s.id === c[0])), -1);
+  const occupiedFloor = occupiedShortCodes.reduce((max, c) => Math.max(max, Number(c.slice(1)) || 0), 0);
+  const effectiveStandCount = Math.max(standCount, occupiedStandIndex + 1);
+  const effectiveFloorCount = Math.max(floorCount, occupiedFloor);
+
+  const STANDS = ALL_STANDS.slice(0, effectiveStandCount);
+  const FLOORS = floorsDescending(effectiveFloorCount);
+  const { originY, viewH, viewW } = computeGeometry(effectiveFloorCount, effectiveStandCount);
   const hasTypeSelection = !!selectedModels && selectedModels.size > 0;
   const selectedHere = STANDS.flatMap((s) => FLOORS.map((f) => `${s.id}${f}`)).filter((c) => {
     const occ = occupants[c];
     return occ && selectedCodes.has(occ.code);
   });
   const legacySelected = !!legacyOccupant && selectedCodes.has(legacyOccupant.code);
+  const legacyMatchesType = !!legacyOccupant && hasTypeSelection && legacyOccupant.models.some((m) => selectedModels!.has(m));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -117,7 +160,13 @@ export default function StandFloorRemovePicker({
             onClick={() => onToggle(legacyOccupant.code)}
             className={cn(
               "w-full flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors",
-              legacySelected ? "border-success bg-success/10" : "border-border bg-muted hover:bg-muted/70",
+              legacySelected
+                ? "border-success bg-success/10"
+                : legacyMatchesType
+                  ? "border-danger bg-danger/10 hover:bg-danger/15"
+                  : hasTypeSelection
+                    ? "border-info bg-info/10 hover:bg-info/15"
+                    : "border-border bg-muted hover:bg-muted/70",
             )}
           >
             <div className="min-w-0">
@@ -142,7 +191,7 @@ export default function StandFloorRemovePicker({
             </span>
           </div>
         ) : (
-          <div className="flex items-center justify-center gap-3 text-[11px] font-semibold">
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] font-semibold">
             {STANDS.map((s) => (
               <span key={s.id} className="inline-flex items-center gap-1">
                 <span className="size-2.5 rounded-sm" style={{ backgroundColor: s.occupied }} />
@@ -152,10 +201,10 @@ export default function StandFloorRemovePicker({
           </div>
         )}
 
-        <div className="rounded-xl bg-muted/40 p-2">
-          <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="w-full h-auto select-none" role="group" aria-label="Storage stand">
+        <div className="rounded-xl bg-muted/40 p-2 overflow-x-auto">
+          <svg viewBox={`0 0 ${viewW} ${viewH}`} width={viewW} height={viewH} className="max-w-none select-none" role="group" aria-label="Storage stand">
             {FLOORS.map((floor) => {
-              const b = blockFor(0, floor);
+              const b = blockFor(0, floor, originY);
               return (
                 <text key={`floor-${floor}`} x={ORIGIN_X - 14} y={b.labelY} textAnchor="end" dominantBaseline="central" fontSize={12} fontWeight={600} fill="#6B7280">
                   {floorLabel(floor)}
@@ -172,9 +221,9 @@ export default function StandFloorRemovePicker({
                   const occupant = occupants[shortCode];
                   const isOccupied = !!occupant;
                   const isSelected = isOccupied && selectedCodes.has(occupant.code);
-                  const isMatchingType = isOccupied && hasTypeSelection && selectedModels!.has(occupant.model);
+                  const isMatchingType = isOccupied && hasTypeSelection && occupant.models.some((m) => selectedModels!.has(m));
                   const style = hasTypeSelection ? (isMatchingType ? SELECTED_TYPE_STYLE : OTHER_TYPE_STYLE) : s;
-                  const b = blockFor(standIndex, floor);
+                  const b = blockFor(standIndex, floor, originY);
                   return (
                     <g
                       key={displayCode}
@@ -201,7 +250,6 @@ export default function StandFloorRemovePicker({
                         fill={isOccupied ? style.occupied : "#F3F4F6"}
                         stroke={isSelected ? "#16A34A" : "#00000014"}
                         strokeWidth={isSelected ? 3 : 1}
-                        opacity={isOccupied ? 1 : 0.6}
                       />
                       <text
                         x={b.labelX}
@@ -210,7 +258,7 @@ export default function StandFloorRemovePicker({
                         dominantBaseline="central"
                         fontSize={13}
                         fontWeight={800}
-                        fill={isOccupied ? style.text : "#9CA3AF"}
+                        fill={isOccupied ? style.text : "#6B7280"}
                       >
                         {shortCode}
                       </text>

@@ -7,6 +7,7 @@ interface WarehouseRow {
   prefix: string;
   column_row_counts: number[];
   column_stand_counts: number[] | null;
+  column_floor_counts: number[] | null;
 }
 
 function fromRow(row: WarehouseRow): WarehouseDef {
@@ -16,6 +17,7 @@ function fromRow(row: WarehouseRow): WarehouseDef {
     prefix: row.prefix,
     columnRowCounts: row.column_row_counts,
     columnStandCounts: row.column_stand_counts ?? undefined,
+    columnFloorCounts: row.column_floor_counts ?? undefined,
   };
 }
 
@@ -38,6 +40,7 @@ export async function upsertWarehouse(warehouse: WarehouseDef): Promise<{ error:
       prefix: warehouse.prefix,
       column_row_counts: warehouse.columnRowCounts,
       column_stand_counts: warehouse.columnStandCounts ?? null,
+      column_floor_counts: warehouse.columnFloorCounts ?? null,
     },
     { onConflict: "key" },
   );

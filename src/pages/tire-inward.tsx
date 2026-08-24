@@ -7,7 +7,7 @@ import QtyStepper from "@/components/qty-stepper";
 import SelectMenu from "@/components/select-menu";
 import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
-import { BIN_CAPACITY, binCounts, FLOOR_COUNT, firstEmptyBin, locationForBin, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
+import { binCounts, firstBin, floorCountAt, locationForBin, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
 import { insertTireHistory } from "@/lib/tire-history";
@@ -101,10 +101,17 @@ export default function TireInward() {
   }, [selectedWarehouse, manualCol, maxRows]);
 
   // How many stands the chosen column has — 1 means Stand is auto-picked as
-  // X with no dropdown shown, 2 means the operator picks X or Y.
+  // A with no dropdown shown, more means the operator picks which one.
   const manualStandCount = selectedWarehouse && manualCol ? standCountAt(selectedWarehouse, Number(manualCol)) : 1;
   const standOptions = STAND_IDS.slice(0, manualStandCount);
-  const floorOptions = useMemo(() => Array.from({ length: FLOOR_COUNT }, (_, i) => i + 1), []);
+  // Before a column is picked, fall back to the tallest floor count across
+  // all columns — same fallback pattern rowOptions uses via maxRows — so the
+  // Floor dropdown isn't empty while the operator is still picking Row.
+  const maxFloors = selectedWarehouse
+    ? Math.max(...selectedWarehouse.columnRowCounts.map((_, i) => floorCountAt(selectedWarehouse, i + 1)))
+    : 0;
+  const manualFloorCount = selectedWarehouse ? (manualCol ? floorCountAt(selectedWarehouse, Number(manualCol)) : maxFloors) : 0;
+  const floorOptions = useMemo(() => Array.from({ length: manualFloorCount }, (_, i) => i + 1), [manualFloorCount]);
 
   const toggleBin = (code: string) => {
     setSelectedBins((prev) => {
@@ -117,7 +124,7 @@ export default function TireInward() {
 
   const addManualLocation = () => {
     if (!selectedWarehouse || !manualRow || !manualCol || !manualFloor) return;
-    const stand = manualStandCount > 1 ? manualStand : "X";
+    const stand = manualStandCount > 1 ? manualStand : STAND_IDS[0];
     if (!stand) return;
     const areaCode = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`;
     const code = `${areaCode}-${stand}${manualFloor}`;
@@ -142,9 +149,9 @@ export default function TireInward() {
       return;
     }
 
-    // No bin tapped — just use the next empty one so this never blocks.
-    const binsArray =
-      selectedBins.size > 0 ? Array.from(selectedBins).sort() : [firstEmptyBin(selectedWarehouse, counts)].filter(Boolean) as string[];
+    // No bin tapped — just use the first one so this never blocks. Bins have
+    // no capacity limit, so there's no need to look for one with room.
+    const binsArray = selectedBins.size > 0 ? Array.from(selectedBins).sort() : [firstBin(selectedWarehouse)].filter(Boolean) as string[];
     if (binsArray.length === 0) {
       setSubmitting(false);
       return;
@@ -154,23 +161,13 @@ export default function TireInward() {
     const assignments: { tireId: string; bin: string; model: string }[] = [];
     const extraTires: Tire[] = [];
 
-    // Round-robin across the selected bins, but never past BIN_CAPACITY —
-    // once every selected bin is full, spill into the next bin in the
-    // warehouse that still has room.
-    const workingCounts = new Map(counts);
+    // Round-robin across the selected bins so multiple picked bins share the
+    // load evenly — no capacity cap, a bin can hold any number of tires.
     let bi = 0;
     const nextBin = (): string => {
-      for (let attempts = 0; attempts < binsArray.length; attempts++) {
-        const b = binsArray[bi % binsArray.length];
-        bi++;
-        if ((workingCounts.get(b) ?? 0) < BIN_CAPACITY) {
-          workingCounts.set(b, (workingCounts.get(b) ?? 0) + 1);
-          return b;
-        }
-      }
-      const spill = firstEmptyBin(selectedWarehouse, workingCounts) ?? binsArray[0];
-      workingCounts.set(spill, (workingCounts.get(spill) ?? 0) + 1);
-      return spill;
+      const b = binsArray[bi % binsArray.length];
+      bi++;
+      return b;
     };
 
     for (const t of selectedTires) {
@@ -403,6 +400,11 @@ export default function TireInward() {
                         setManualRow("");
                       }
                     }
+
+                    // Validate selected floor against the new column's floor count
+                    if (col && manualFloor && Number(manualFloor) > floorCountAt(selectedWarehouse, Number(col))) {
+                      setManualFloor("");
+                    }
                   }}
                 />
               </label>
@@ -424,7 +426,7 @@ export default function TireInward() {
                 />
               </label>
 
-              {/* STAND — only shown when this column has a second stand; otherwise auto-picked as X */}
+              {/* STAND — only shown when this column has more than one stand; otherwise auto-picked as the first (A) */}
               {manualStandCount > 1 && (
                 <label className="block space-y-1.5">
                   <span className="text-sm font-medium text-foreground">Select Stand</span>
@@ -593,6 +595,7 @@ export default function TireInward() {
         <StandFloorPicker
           areaCode={pickerAreaCode}
           standCount={standCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
+          floorCount={floorCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
           slotCounts={Object.fromEntries(
             Array.from(counts.entries())
               .filter(([bin]) => bin.startsWith(`${pickerAreaCode}-`))

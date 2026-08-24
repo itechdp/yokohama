@@ -8,25 +8,33 @@ export interface WarehouseDef {
   label: string;
   prefix: string;
   columnRowCounts: number[]; // index 0 = column 01, value = max row number in that column
-  // Optional per-column stand count: how many stands (1 or 2, X and
-  // optionally Y) the picker shows for every area in that column. Applies
+  // Optional per-column stand count: how many stands (A, B, C, ... — see
+  // STAND_IDS) the picker shows for every area in that column. Applies
   // uniformly to every row/area in the column, same as columnRowCounts.
-  // Missing entries, or a missing array entirely, default to 1 stand —
-  // floor count is fixed everywhere and isn't configured here.
+  // Missing entries, or a missing array entirely, default to 1 stand.
   columnStandCounts?: number[];
+  // Optional per-column floor count: how many floors the picker shows for
+  // every stand in that column. Missing entries, or a missing array
+  // entirely, default to FLOOR_COUNT.
+  columnFloorCounts?: number[];
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-export const STAND_IDS = ["X", "Y", "Z"] as const;
+// Stand letters, A, B, C, ... — no fixed cap, same as floors. 26 covers any
+// realistic physical layout; extend here if a warehouse ever needs more.
+export const STAND_IDS: string[] = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
+// Default floor count for a column that hasn't configured its own.
 export const FLOOR_COUNT = 6;
 
-// How many tires one stand+floor slot ("plate") can physically hold.
-export const BIN_CAPACITY = 5;
-
-// Stand count of an area's column — how many stands (1 or 2) the picker shows.
+// Stand count of an area's column — how many stands the picker shows.
 export function standCountAt(warehouse: WarehouseDef, col: number): number {
   return warehouse.columnStandCounts?.[col - 1] ?? 1;
+}
+
+// Floor count of an area's column — how many floors the picker shows.
+export function floorCountAt(warehouse: WarehouseDef, col: number): number {
+  return warehouse.columnFloorCounts?.[col - 1] ?? FLOOR_COUNT;
 }
 
 // Every real, placeable bin in the warehouse — one per (area, stand, floor),
@@ -38,10 +46,11 @@ export function binsForWarehouse(warehouse: WarehouseDef): string[] {
   warehouse.columnRowCounts.forEach((maxRow, colIndex) => {
     const col = colIndex + 1;
     const standCount = standCountAt(warehouse, col);
+    const floorCount = floorCountAt(warehouse, col);
     for (let row = 1; row <= maxRow; row++) {
       const areaCode = `${warehouse.prefix}${pad2(col)}-${pad2(row)}`;
       for (const standId of STAND_IDS.slice(0, standCount)) {
-        for (let floor = 1; floor <= FLOOR_COUNT; floor++) {
+        for (let floor = 1; floor <= floorCount; floor++) {
           bins.push(`${areaCode}-${standId}${floor}`);
         }
       }
@@ -76,8 +85,8 @@ export function occupiedBins(warehouse: WarehouseDef, tires: { currentStage: str
   return occupied;
 }
 
-// How many tires currently sit in each bin — a plate can hold more than one
-// (up to BIN_CAPACITY), so this is a count, not just occupied/empty.
+// How many tires currently sit in each bin — a plate can hold any number of
+// tires, so this is a count, not just occupied/empty.
 export function binCounts(warehouse: WarehouseDef, tires: { currentStage: string; location: string }[]): Map<string, number> {
   const prefix = `${warehouse.label} - Bin `;
   const counts = new Map<string, number>();
@@ -90,11 +99,9 @@ export function binCounts(warehouse: WarehouseDef, tires: { currentStage: string
   return counts;
 }
 
-// First bin with room in it — used to auto-place stock when the operator
+// First bin in the warehouse — used to auto-place stock when the operator
 // hasn't tapped a specific bin, so confirming never blocks on a missing pick.
-export function firstEmptyBin(warehouse: WarehouseDef, counts: Map<string, number>): string | null {
-  for (const bin of binsForWarehouse(warehouse)) {
-    if ((counts.get(bin) ?? 0) < BIN_CAPACITY) return bin;
-  }
-  return null;
+// Bins have no capacity limit, so there's no need to look for one with room.
+export function firstBin(warehouse: WarehouseDef): string | null {
+  return binsForWarehouse(warehouse)[0] ?? null;
 }

@@ -1,18 +1,30 @@
 import { X } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { BIN_CAPACITY } from "@/data/warehouse-bins";
+import { STAND_IDS } from "@/data/warehouse-bins";
 
-// 6 floors, top = Floor 6, bottom = Floor 1 (Ground). An area has 1 or 2
-// stands (configured per warehouse column) — X (front) always shows fully;
-// Y (back), when the area has a second stand, sits behind X offset just
-// enough that ~80% of it still shows (label readable).
-const FLOORS = [6, 5, 4, 3, 2, 1] as const;
+// Floor count and stand count are both configured per warehouse column, no
+// fixed cap on either. Stand A (front) always shows fully; B, C, ... (each
+// one further back), when present, sit behind it offset just enough that
+// ~80% of each still shows (label readable).
+function floorsDescending(floorCount: number): number[] {
+  return Array.from({ length: floorCount }, (_, i) => floorCount - i);
+}
 
-const ALL_STANDS = [
-  { id: "X", label: "X Row (Front)", front: "#93C5FD", top: "#DBEAFE", side: "#60A5FA", text: "#1E3A8A" },
-  { id: "Y", label: "Y Row (Back)", front: "#86EFAC", top: "#DCFCE7", side: "#4ADE80", text: "#14532D" },
-  { id: "Z", label: "Z Row (Rear)", front: "#C4B5FD", top: "#EDE9FE", side: "#A78BFA", text: "#4C1D95" },
-] as const;
+// Hand-picked, visually distinct colors for the first 8 stands; cycles
+// beyond that (stands beyond 8 are still distinguishable by their letter).
+const STAND_PALETTE = [
+  { front: "#93C5FD", top: "#DBEAFE", side: "#60A5FA", text: "#1E3A8A" }, // blue
+  { front: "#86EFAC", top: "#DCFCE7", side: "#4ADE80", text: "#14532D" }, // green
+  { front: "#C4B5FD", top: "#EDE9FE", side: "#A78BFA", text: "#4C1D95" }, // purple
+  { front: "#FCA5A5", top: "#FEE2E2", side: "#F87171", text: "#7F1D1D" }, // red
+  { front: "#FCD34D", top: "#FEF3C7", side: "#FBBF24", text: "#78350F" }, // amber
+  { front: "#67E8F9", top: "#CFFAFE", side: "#22D3EE", text: "#164E63" }, // cyan
+  { front: "#F9A8D4", top: "#FCE7F3", side: "#F472B6", text: "#831843" }, // pink
+  { front: "#BEF264", top: "#ECFCCB", side: "#A3E635", text: "#365314" }, // lime
+];
+
+function standsFor(standCount: number) {
+  return STAND_IDS.slice(0, standCount).map((id, i) => ({ id, label: `${id} Row`, ...STAND_PALETTE[i % STAND_PALETTE.length] }));
+}
 
 const BLOCK_W = 74;
 const BLOCK_H = 40;
@@ -27,17 +39,26 @@ const STAND_STEP_Y = -16;
 const FLOOR_STEP_Y = 48;
 
 const ORIGIN_X = 104;
-const ORIGIN_Y = 372;
+const MARGIN_TOP = 40;
+const MARGIN_BOTTOM = 40;
+const MARGIN_RIGHT = 40;
 
-const VIEW_W = 390;
-const VIEW_H = 430;
+// Origin/view height grow with floor/stand count so the tallest, deepest
+// block always has headroom; view width grows with stand count so a wide
+// column (many stands) never gets clipped or forces the modal to overflow —
+// the SVG renders at its natural pixel size and the wrapper scrolls instead.
+function computeGeometry(floorCount: number, standCount: number) {
+  const originY = MARGIN_TOP + (standCount - 1) * Math.abs(STAND_STEP_Y) + (floorCount - 1) * FLOOR_STEP_Y + BLOCK_H - DEPTH_DY;
+  const viewW = ORIGIN_X + (standCount - 1) * STAND_STEP_X + BLOCK_W + DEPTH_DX + MARGIN_RIGHT;
+  return { originY, viewH: originY + MARGIN_BOTTOM, viewW };
+}
 
 const floorLabel = (floor: number) =>
   floor === 1 ? "1st Floor (Ground)" : `${floor}${floor === 2 ? "nd" : floor === 3 ? "rd" : "th"} Floor`;
 
-function blockFor(standIndex: number, floor: number) {
+function blockFor(standIndex: number, floor: number, originY: number) {
   const fx = ORIGIN_X + standIndex * STAND_STEP_X;
-  const fy = ORIGIN_Y + standIndex * STAND_STEP_Y - (floor - 1) * FLOOR_STEP_Y;
+  const fy = originY + standIndex * STAND_STEP_Y - (floor - 1) * FLOOR_STEP_Y;
   const top = fy - BLOCK_H;
   return {
     front: { x: fx, y: top, w: BLOCK_W, h: BLOCK_H },
@@ -51,6 +72,7 @@ function blockFor(standIndex: number, floor: number) {
 export default function StandFloorPickerSvg({
   areaCode,
   standCount,
+  floorCount,
   slotCounts,
   selectedCode,
   onSelect,
@@ -58,14 +80,17 @@ export default function StandFloorPickerSvg({
 }: {
   areaCode: string;
   standCount: number;
+  floorCount: number;
   // How many tires already sit in each stand+floor slot ("X1", "Y3", ...) of
-  // this area — a slot at BIN_CAPACITY is full and greyed out, not selectable.
+  // this area — no capacity limit, shown just for info.
   slotCounts: Record<string, number>;
   selectedCode: string | null;
   onSelect: (code: string) => void;
   onClose: () => void;
 }) {
-  const STANDS = ALL_STANDS.slice(0, standCount);
+  const STANDS = standsFor(standCount);
+  const FLOORS = floorsDescending(floorCount);
+  const { originY, viewH, viewW } = computeGeometry(floorCount, standCount);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-2xl bg-card p-4 sm:p-5 shadow-xl space-y-3 max-h-[92vh] overflow-y-auto">
@@ -79,7 +104,7 @@ export default function StandFloorPickerSvg({
           </button>
         </div>
 
-        <div className="flex items-center justify-center gap-3 text-[11px] font-semibold">
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] font-semibold">
           {STANDS.map((s) => (
             <span key={s.id} className="inline-flex items-center gap-1">
               <span className="size-2.5 rounded-sm" style={{ backgroundColor: s.front }} />
@@ -88,11 +113,11 @@ export default function StandFloorPickerSvg({
           ))}
         </div>
 
-        <div className="rounded-xl bg-muted/40 p-2">
-          <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="w-full h-auto select-none" role="group" aria-label="Storage stand">
+        <div className="rounded-xl bg-muted/40 p-2 overflow-x-auto">
+          <svg viewBox={`0 0 ${viewW} ${viewH}`} width={viewW} height={viewH} className="max-w-none select-none" role="group" aria-label="Storage stand">
             {/* Floor labels, left of the front (X) column */}
             {FLOORS.map((floor) => {
-              const b = blockFor(0, floor);
+              const b = blockFor(0, floor, originY);
               return (
                 <text
                   key={`floor-${floor}`}
@@ -118,39 +143,33 @@ export default function StandFloorPickerSvg({
                   const shortCode = `${s.id}${floor}`;
                   const code = `${areaCode}-${shortCode}`;
                   const count = slotCounts[shortCode] ?? 0;
-                  const isFull = count >= BIN_CAPACITY;
                   const isSelected = selectedCode === code;
-                  const b = blockFor(standIndex, floor);
+                  const b = blockFor(standIndex, floor, originY);
                   return (
                     <g
                       key={code}
                       role="button"
-                      tabIndex={isFull ? -1 : 0}
-                      aria-label={isFull ? `${code}: full (${count}/${BIN_CAPACITY})` : code}
-                      aria-disabled={isFull}
-                      onClick={() => !isFull && onSelect(code)}
+                      tabIndex={0}
+                      aria-label={count > 0 ? `${code}: ${count} tire${count === 1 ? "" : "s"}` : code}
+                      onClick={() => onSelect(code)}
                       onKeyDown={(e) => {
-                        if (!isFull && (e.key === "Enter" || e.key === " ")) onSelect(code);
+                        if (e.key === "Enter" || e.key === " ") onSelect(code);
                       }}
-                      className={cn(
-                        "transition-transform duration-150",
-                        isFull ? "cursor-not-allowed" : "cursor-pointer hover:brightness-105",
-                      )}
+                      className="transition-transform duration-150 cursor-pointer hover:brightness-105"
                       style={{ transformOrigin: `${b.labelX}px ${b.labelY}px` }}
                     >
-                      <title>{isFull ? `${code} — full (${count}/${BIN_CAPACITY})` : `${code} — ${count}/${BIN_CAPACITY}`}</title>
-                      <polygon points={b.topFace} fill={isFull ? "#E5E7EB" : s.top} stroke="#00000014" />
-                      <polygon points={b.sideFace} fill={isFull ? "#D1D5DB" : s.side} stroke="#00000014" />
+                      <title>{count > 0 ? `${code} — ${count} tire${count === 1 ? "" : "s"}` : `${code} — empty`}</title>
+                      <polygon points={b.topFace} fill={s.top} stroke="#00000014" />
+                      <polygon points={b.sideFace} fill={s.side} stroke="#00000014" />
                       <rect
                         x={b.front.x}
                         y={b.front.y}
                         width={b.front.w}
                         height={b.front.h}
                         rx={3}
-                        fill={isFull ? "#F3F4F6" : s.front}
+                        fill={s.front}
                         stroke={isSelected ? "#16A34A" : "#00000014"}
                         strokeWidth={isSelected ? 3 : 1}
-                        opacity={isFull ? 0.7 : 1}
                       />
                       <text
                         x={b.labelX}
@@ -159,7 +178,7 @@ export default function StandFloorPickerSvg({
                         dominantBaseline="central"
                         fontSize={13}
                         fontWeight={800}
-                        fill={isFull ? "#9CA3AF" : s.text}
+                        fill={s.text}
                       >
                         {s.id}
                         {floor}

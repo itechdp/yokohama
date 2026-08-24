@@ -4,7 +4,7 @@ import { ArrowUpFromLine, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import StandFloorRemovePicker, { type Occupant } from "@/components/stand-floor-remove-picker";
 import SuccessOverlay from "@/components/success-overlay";
-import { binForLocation, locationForBin, occupiedBins, PICKED_LOCATION, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
+import { binForLocation, floorCountAt, locationForBin, occupiedBins, PICKED_LOCATION, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertTireHistory } from "@/lib/tire-history";
 import { fetchTires, upsertTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
@@ -94,8 +94,10 @@ export default function TireOutward() {
     for (const code of occupied) {
       if (code !== areaCode && !code.startsWith(`${areaCode}-`)) continue;
       const location = locationForBin(selectedWarehouse, code);
-      const tire = tires.find((t) => t.currentStage === "warehouse" && t.location === location);
-      if (tire && selectedModels.has(tire.model)) return true;
+      // A bin can hold any number of tires of different models, so every
+      // tire at this location has to be checked — not just the first found.
+      const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
+      if (atBin.some((t) => selectedModels.has(t.model))) return true;
     }
     return false;
   };
@@ -107,7 +109,9 @@ export default function TireOutward() {
     const location = locationForBin(selectedWarehouse, areaCode);
     const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
     const tire = atBin[0];
-    return tire ? { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code: areaCode, count: atBin.length } : undefined;
+    return tire
+      ? { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code: areaCode, count: atBin.length, models: atBin.map((t) => t.model) }
+      : undefined;
   };
 
   const removeBin = (code: string) => {
@@ -137,7 +141,15 @@ export default function TireOutward() {
       const location = locationForBin(selectedWarehouse, code);
       const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
       const tire = atBin[0];
-      if (tire) result[shortCode] = { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code, count: atBin.length };
+      if (tire)
+        result[shortCode] = {
+          tireId: tire.id,
+          model: tire.model,
+          serialNumber: tire.serialNumber,
+          code,
+          count: atBin.length,
+          models: atBin.map((t) => t.model),
+        };
     }
     return result;
   };
@@ -365,7 +377,16 @@ export default function TireOutward() {
                 .sort()
                 .map((code) => {
                   const location = selectedWarehouse ? locationForBin(selectedWarehouse, code) : "";
-                  const tire = tires.find((t) => t.location === location);
+                  // A bin can hold several tires of different models (no
+                  // capacity limit), so all of them need to be listed here —
+                  // not just the first one found — or the count would look
+                  // like a mismatch against selectedTires.length above.
+                  const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
+                  const modelCounts = new Map<string, number>();
+                  for (const t of atBin) modelCounts.set(t.model, (modelCounts.get(t.model) ?? 0) + 1);
+                  const modelSummary = Array.from(modelCounts.entries())
+                    .map(([model, n]) => (n > 1 ? `${model} x${n}` : model))
+                    .join(", ");
                   return (
                     <li
                       key={code}
@@ -373,7 +394,7 @@ export default function TireOutward() {
                     >
                       <div className="min-w-0">
                         <p className="font-medium text-foreground truncate">{code}</p>
-                        <p className="text-muted-foreground truncate">{tire?.model}</p>
+                        <p className="text-muted-foreground truncate">{modelSummary}</p>
                       </div>
                       <button
                         type="button"
@@ -405,6 +426,7 @@ export default function TireOutward() {
         <StandFloorRemovePicker
           areaCode={pickerAreaCode}
           standCount={standCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
+          floorCount={floorCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
           occupants={occupantsForArea(pickerAreaCode)}
           legacyOccupant={legacyOccupantForArea(pickerAreaCode)}
           selectedCodes={selectedBins}

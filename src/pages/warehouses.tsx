@@ -1,19 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Check, Grid3x3, Pencil, Plus, Trash2, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import SelectMenu from "@/components/select-menu";
+import ConfirmDialog from "@/components/confirm-dialog";
 import { deleteWarehouse, fetchWarehouses, upsertWarehouse } from "@/lib/warehouses";
-import type { WarehouseDef } from "@/data/warehouse-bins";
+import { FLOOR_COUNT, STAND_IDS, type WarehouseDef } from "@/data/warehouse-bins";
 
 function emptyForm(): WarehouseDef {
   return { key: "", label: "", prefix: "", columnRowCounts: [10] };
 }
 
-// Stand count (1 or 2) for a column, defaulting to 1 when the warehouse
+// Stand count (1, 2, or 3) for a column, defaulting to 1 when the warehouse
 // hasn't configured it yet.
 function standCountForColumn(form: WarehouseDef, colIndex: number): number {
   return form.columnStandCounts?.[colIndex] ?? 1;
+}
+
+// Floor count for a column, defaulting to FLOOR_COUNT when the warehouse
+// hasn't configured it yet.
+function floorCountForColumn(form: WarehouseDef, colIndex: number): number {
+  return form.columnFloorCounts?.[colIndex] ?? FLOOR_COUNT;
 }
 
 function slugify(label: string): string {
@@ -40,6 +46,8 @@ export default function Warehouses() {
   const [isNew, setIsNew] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<WarehouseDef | null>(null);
+  const columnsContainerRef = useRef<HTMLDivElement>(null);
 
   const load = () => {
     fetchWarehouses().then(setWarehouses);
@@ -56,7 +64,12 @@ export default function Warehouses() {
   };
 
   const startEdit = (w: WarehouseDef) => {
-    setForm({ ...w, columnRowCounts: [...w.columnRowCounts], columnStandCounts: w.columnStandCounts ? [...w.columnStandCounts] : undefined });
+    setForm({
+      ...w,
+      columnRowCounts: [...w.columnRowCounts],
+      columnStandCounts: w.columnStandCounts ? [...w.columnStandCounts] : undefined,
+      columnFloorCounts: w.columnFloorCounts ? [...w.columnFloorCounts] : undefined,
+    });
     setIsNew(false);
     setError(null);
   };
@@ -66,8 +79,10 @@ export default function Warehouses() {
     setError(null);
   };
 
-  const handleDelete = async (key: string) => {
-    if (!window.confirm("Delete this warehouse? Its bin layout will be lost.")) return;
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const key = deleteTarget.key;
+    setDeleteTarget(null);
     setWarehouses((prev) => prev.filter((w) => w.key !== key));
     await deleteWarehouse(key);
   };
@@ -82,6 +97,11 @@ export default function Warehouses() {
 
   const addColumn = () => {
     setForm((f) => (f ? { ...f, columnRowCounts: [...f.columnRowCounts, 10] } : f));
+    // New column always lands at the end — scroll it into view once the DOM
+    // has the new card so operators don't have to hunt for it.
+    requestAnimationFrame(() => {
+      columnsContainerRef.current?.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
   };
 
   const removeColumn = (index: number) => {
@@ -89,19 +109,32 @@ export default function Warehouses() {
       if (!f) return f;
       const columnRowCounts = f.columnRowCounts.filter((_, i) => i !== index);
       const columnStandCounts = f.columnStandCounts?.filter((_, i) => i !== index);
-      return { ...f, columnRowCounts, columnStandCounts };
+      const columnFloorCounts = f.columnFloorCounts?.filter((_, i) => i !== index);
+      return { ...f, columnRowCounts, columnStandCounts, columnFloorCounts };
     });
   };
 
-  // Sets how many stands (1 or 2) the picker shows for every area in a
+  // Sets how many stands (1, 2, or 3) the picker shows for every area in a
   // column. Lazily materializes the full array (every column = 1) the first
-  // time any column gets set to 2.
+  // time any column gets changed.
   const updateStandCount = (colIndex: number, value: number) => {
     setForm((f) => {
       if (!f) return f;
       const columnStandCounts = f.columnRowCounts.map((_, i) => standCountForColumn(f, i));
       columnStandCounts[colIndex] = value;
       return { ...f, columnStandCounts };
+    });
+  };
+
+  // Sets how many floors the picker shows for every stand in a column.
+  // Lazily materializes the full array (every column = FLOOR_COUNT) the
+  // first time any column's floor count gets changed.
+  const updateFloorCount = (colIndex: number, value: number) => {
+    setForm((f) => {
+      if (!f) return f;
+      const columnFloorCounts = f.columnRowCounts.map((_, i) => floorCountForColumn(f, i));
+      columnFloorCounts[colIndex] = value;
+      return { ...f, columnFloorCounts };
     });
   };
 
@@ -124,6 +157,14 @@ export default function Warehouses() {
       setError("Every column needs at least 1 row.");
       return;
     }
+    if (form.columnFloorCounts?.some((n) => !Number.isFinite(n) || n < 1)) {
+      setError("Every column needs at least 1 floor.");
+      return;
+    }
+    if (form.columnStandCounts?.some((n) => !Number.isFinite(n) || n < 1 || n > STAND_IDS.length)) {
+      setError(`Every column needs 1-${STAND_IDS.length} stands.`);
+      return;
+    }
 
     setSaving(true);
     const { error: saveError } = await upsertWarehouse({
@@ -132,6 +173,7 @@ export default function Warehouses() {
       prefix,
       columnRowCounts: form.columnRowCounts,
       columnStandCounts: form.columnStandCounts,
+      columnFloorCounts: form.columnFloorCounts,
     });
     setSaving(false);
 
@@ -195,7 +237,7 @@ export default function Warehouses() {
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                 <Grid3x3 className="size-3.5" />
-                Columns ({form.columnRowCounts.length}) · rows · stands per column
+                Columns ({form.columnRowCounts.length})
               </label>
               <button
                 type="button"
@@ -206,37 +248,64 @@ export default function Warehouses() {
                 Add column
               </button>
             </div>
-            <p className="text-[10px] text-muted-foreground">
-              Stands = how many stands (1 or 2) the picker shows for every area in that column. Floor count is fixed and isn't set here.
-            </p>
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 max-h-56 overflow-y-auto rounded-xl border border-border p-2">
+            <div ref={columnsContainerRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-80 overflow-y-auto rounded-xl border border-border p-2">
               {form.columnRowCounts.map((count, i) => {
                 const standCount = standCountForColumn(form, i);
+                const floorCount = floorCountForColumn(form, i);
                 return (
-                  <div key={i} className="flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1">
-                    <span className="text-[10px] font-medium text-muted-foreground">{String(i + 1).padStart(2, "0")}</span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={count}
-                      onChange={(e) => updateColumn(i, Number(e.target.value.replace(/\D/g, "")) || 0)}
-                      className="w-10 bg-transparent text-center text-sm text-foreground focus:outline-none"
-                    />
-                    <SelectMenu
-                      value={String(standCount)}
-                      placeholder="Stands"
-                      options={[1, 2, 3].map((n) => ({ value: String(n), label: String(n) }))}
-                      onChange={(v) => updateStandCount(i, Number(v))}
-                      className="w-14"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeColumn(i)}
-                      className="text-muted-foreground hover:text-danger"
-                      aria-label={`Remove column ${i + 1}`}
-                    >
-                      <X className="size-3.5" />
-                    </button>
+                  <div key={i} className="rounded-lg border border-border bg-card p-2.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-foreground">Column {String(i + 1).padStart(2, "0")}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeColumn(i)}
+                        className="text-muted-foreground hover:text-danger"
+                        aria-label={`Remove column ${i + 1}`}
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <div className="space-y-0.5">
+                        <label className="block text-[9px] font-medium uppercase tracking-wide text-muted-foreground">Rows</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          aria-label={`Rows for column ${i + 1}`}
+                          value={count}
+                          onChange={(e) => updateColumn(i, Number(e.target.value.replace(/\D/g, "")) || 0)}
+                          className="w-full rounded-md border border-border bg-card px-1 py-2 text-center text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                      </div>
+                      <div className="space-y-0.5">
+                        <label className="block text-[9px] font-medium uppercase tracking-wide text-muted-foreground">Stands</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          aria-label={`Stands for column ${i + 1}`}
+                          value={standCount}
+                          onChange={(e) => updateStandCount(i, Number(e.target.value.replace(/\D/g, "")) || 0)}
+                          className={cn(
+                            "w-full rounded-md border px-1 py-2 text-center text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring",
+                            standCount !== 1 ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-foreground",
+                          )}
+                        />
+                      </div>
+                      <div className="space-y-0.5">
+                        <label className="block text-[9px] font-medium uppercase tracking-wide text-muted-foreground">Floors</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          aria-label={`Floors for column ${i + 1}`}
+                          value={floorCount}
+                          onChange={(e) => updateFloorCount(i, Number(e.target.value.replace(/\D/g, "")) || 0)}
+                          className={cn(
+                            "w-full rounded-md border px-1 py-2 text-center text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring",
+                            floorCount !== FLOOR_COUNT ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-foreground",
+                          )}
+                        />
+                      </div>
+                    </div>
                   </div>
                 );
               })}
@@ -291,7 +360,7 @@ export default function Warehouses() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDelete(w.key)}
+                    onClick={() => setDeleteTarget(w)}
                     className="shrink-0 inline-flex items-center justify-center rounded-lg border border-border p-2 text-muted-foreground hover:border-danger hover:text-danger transition-colors"
                     aria-label={`Delete ${w.label}`}
                   >
@@ -307,6 +376,16 @@ export default function Warehouses() {
       <Link to="/" className="inline-block text-sm text-muted-foreground hover:text-foreground">
         Back to home
       </Link>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={deleteTarget ? `Delete ${deleteTarget.label}?` : ""}
+        message="Its bin layout will be lost."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
