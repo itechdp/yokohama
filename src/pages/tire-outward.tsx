@@ -124,11 +124,6 @@ export default function TireOutward() {
     });
   };
 
-  // Whether an area code is occupied — either a real stand+floor bin under
-  // it ("AREA-X6") or, for tires placed before that tracking existed, the
-  // bare area code itself ("AREA") with no suffix at all.
-  const areaHasOccupancy = (areaCode: string) => occupied.has(areaCode) || Array.from(occupied).some((b) => b.startsWith(`${areaCode}-`));
-
   // Whether an area (any of its occupied slots, including a legacy bare-area
   // tire) holds a selected model.
   const areaMatchesSelection = (areaCode: string) => {
@@ -390,20 +385,10 @@ export default function TireOutward() {
         <h2 className="text-base font-medium text-foreground">Warehouse bin map</h2>
         {!selectedWarehouse ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">Choose a warehouse first.</div>
-        ) : occupied.size === 0 ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">No tires currently in this warehouse.</div>
+        ) : selectedModels.size === 0 ? (
+          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">Select a tire type above to see its locations.</div>
         ) : (
           <>
-            {selectedModels.size > 0 && (
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="size-3 rounded bg-info/70 inline-block" /> Other tires
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="size-3 rounded bg-danger/70 inline-block" /> Selected type here
-                </span>
-              </div>
-            )}
             <div className="overflow-auto max-h-96 rounded-xl border border-border">
               <table className="border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-card">
@@ -426,21 +411,20 @@ export default function TireOutward() {
                           if (row > maxRow) return <td key={colIdx} />;
                           const col = colIdx + 1;
                           const code = `${selectedWarehouse.prefix}${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`;
-                          const hasOccupancy = areaHasOccupancy(code);
-                          const hasPick = hasOccupancy && areaHasPick(code);
-                          const isMatch = hasOccupancy && areaMatchesSelection(code);
+                          const isMatch = areaMatchesSelection(code);
+                          const hasPick = areaHasPick(code);
+                          const isRelevant = isMatch || hasPick;
                           return (
                             <td key={colIdx} className="p-0.5">
                               <button
                                 type="button"
-                                disabled={!hasOccupancy}
+                                disabled={!isRelevant}
                                 onClick={() => setPickerAreaCode(code)}
-                                title={hasOccupancy ? code : `${code} — empty`}
+                                title={isRelevant ? code : `${code} — empty`}
                                 className={cn(
                                   "flex h-8 w-12 items-center justify-center rounded text-[9px] font-bold leading-none text-white transition-colors",
-                                  !hasOccupancy && "bg-muted text-muted-foreground/40 cursor-not-allowed",
-                                  hasOccupancy && !hasPick && !isMatch && "bg-info/70 hover:bg-info",
-                                  hasOccupancy && !hasPick && isMatch && "bg-danger/70 hover:bg-danger",
+                                  !isRelevant && "bg-muted text-muted-foreground/40 cursor-not-allowed",
+                                  isRelevant && !hasPick && "bg-info/70 hover:bg-info",
                                   hasPick && "bg-success ring-2 ring-success ring-offset-1 hover:bg-success",
                                 )}
                               >
