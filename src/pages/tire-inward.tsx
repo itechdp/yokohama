@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { ArrowDownToLine, ArrowLeftRight, Search, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, QrCode, Search, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ExchangeLocationModal from "@/components/exchange-location-modal";
 import QtyStepper from "@/components/qty-stepper";
 import SelectMenu from "@/components/select-menu";
 import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
+import WarehouseQrScanner from "@/components/warehouse-qr-scanner";
 import { binCounts, firstBin, floorCountAt, locationForBin, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
@@ -43,6 +44,7 @@ export default function TireInward() {
   const [submitting, setSubmitting] = useState(false);
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
+  const [scanningWarehouse, setScanningWarehouse] = useState(false);
 
   useEffect(() => {
     fetchTires().then(setTires);
@@ -321,15 +323,26 @@ export default function TireInward() {
             <WarehouseIcon className="size-4 text-muted-foreground" />
             2. Warehouse
           </h2>
-          <button
-            type="button"
-            onClick={() => setExchangeOpen(true)}
-            aria-label="Exchange location"
-            title="Exchange location"
-            className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-muted transition-colors shrink-0"
-          >
-            <ArrowLeftRight className="size-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setScanningWarehouse(true)}
+              aria-label="Scan warehouse QR"
+              title="Scan warehouse QR"
+              className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-muted transition-colors"
+            >
+              <QrCode className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setExchangeOpen(true)}
+              aria-label="Exchange location"
+              title="Exchange location"
+              className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-muted transition-colors"
+            >
+              <ArrowLeftRight className="size-4" />
+            </button>
+          </div>
         </div>
         {warehouses.length === 0 && (
           <p className="text-sm text-muted-foreground">
@@ -607,6 +620,23 @@ export default function TireInward() {
             setPickerAreaCode(null);
           }}
           onClose={() => setPickerAreaCode(null)}
+        />
+      )}
+
+      {scanningWarehouse && (
+        <WarehouseQrScanner
+          warehouses={warehouses}
+          onMatch={(key) => {
+            setWarehouseKey(key);
+            setSelectedBins(new Set());
+            setManualRow("");
+            setManualCol("");
+            setManualStand("");
+            setManualFloor("");
+            setManualError(null);
+            setScanningWarehouse(false);
+          }}
+          onClose={() => setScanningWarehouse(false)}
         />
       )}
     </div>
