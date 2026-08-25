@@ -1,4 +1,4 @@
--- SKU catalog table: Material / Tire Description-Brand / Ply Rating Bottom / Brand.
+-- SKU catalog tables: Material / Tire Description-Brand / Ply Rating Bottom / Brand.
 -- Run this once in the Supabase SQL Editor (Project -> SQL Editor -> New query).
 -- After running it, use Table Editor -> tire_skus -> Insert -> Import data from CSV
 -- to load your spreadsheet (columns must map to material, description, ply_rating_bottom, brand).
