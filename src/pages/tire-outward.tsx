@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowUpFromLine, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { ArrowUpFromLine, MapPin, Warehouse as WarehouseIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import StandFloorRemovePicker, { type Occupant } from "@/components/stand-floor-remove-picker";
 import SuccessOverlay from "@/components/success-overlay";
-import { binForLocation, floorCountAt, locationForBin, occupiedBins, PICKED_LOCATION, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
+import {
+  binForLocation,
+  floorCountAt,
+  locationForBin,
+  occupiedBins,
+  PICKED_LOCATION,
+  standCountAt,
+  type WarehouseDef,
+} from "@/data/warehouse-bins";
 import { insertTireHistory } from "@/lib/tire-history";
 import { fetchTires, upsertTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
@@ -24,7 +32,7 @@ export default function TireOutward() {
 
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [warehouseKey, setWarehouseKey] = useState("");
-  const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
+  const [selectedLocations, setSelectedLocations] = useState<Set<string>>(new Set());
   const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
 
   const [success, setSuccess] = useState<string | null>(null);
@@ -82,6 +90,40 @@ export default function TireOutward() {
   );
   const maxRows = selectedWarehouse ? Math.max(...selectedWarehouse.columnRowCounts) : 0;
 
+  // Every occupied bin across every warehouse, with its exact location text
+  // and the models sitting there. This is fully independent of the
+  // warehouse/bin-map above — an operator who already knows the location can
+  // pick it directly here without ever choosing a warehouse or opening the map.
+  const occupiedLocations = useMemo(() => {
+    const list: { location: string; warehouseLabel: string; code: string; models: string[] }[] = [];
+    for (const w of warehouses) {
+      const occ = occupiedBins(w, tires);
+      for (const code of occ) {
+        const location = locationForBin(w, code);
+        const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
+        if (atBin.length === 0) continue;
+        list.push({ location, warehouseLabel: w.label, code, models: Array.from(new Set(atBin.map((t) => t.model))) });
+      }
+    }
+    return list.sort((a, b) => a.location.localeCompare(b.location));
+  }, [warehouses, tires]);
+
+  // Only the occupied locations that actually hold a selected tire type —
+  // this card only makes sense once a type is chosen in step 1.
+  const pickableLocations = useMemo(
+    () => occupiedLocations.filter((loc) => loc.models.some((m) => selectedModels.has(m))),
+    [occupiedLocations, selectedModels],
+  );
+
+  const toggleLocation = (location: string) => {
+    setSelectedLocations((prev) => {
+      const next = new Set(prev);
+      if (next.has(location)) next.delete(location);
+      else next.add(location);
+      return next;
+    });
+  };
+
   // Whether an area code is occupied — either a real stand+floor bin under
   // it ("AREA-X6") or, for tires placed before that tracking existed, the
   // bare area code itself ("AREA") with no suffix at all.
@@ -102,34 +144,12 @@ export default function TireOutward() {
     return false;
   };
 
-  // The tire sitting directly at the bare area code, if any — pre-existing
-  // stock placed before stand/floor tracking existed.
-  const legacyOccupantForArea = (areaCode: string): Occupant | undefined => {
-    if (!selectedWarehouse || !occupied.has(areaCode)) return undefined;
-    const location = locationForBin(selectedWarehouse, areaCode);
-    const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
-    const tire = atBin[0];
-    return tire
-      ? { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code: areaCode, count: atBin.length, models: atBin.map((t) => t.model) }
-      : undefined;
-  };
-
-  const removeBin = (code: string) => {
-    setSelectedBins((prev) => {
-      const next = new Set(prev);
-      next.delete(code);
-      return next;
+  const areaHasPick = (areaCode: string) =>
+    Array.from(selectedLocations).some((location) => {
+      if (!selectedWarehouse) return false;
+      const code = binForLocation(selectedWarehouse, location);
+      return code === areaCode || code?.startsWith(`${areaCode}-`);
     });
-  };
-
-  const toggleBinForRemoval = (code: string) => {
-    setSelectedBins((prev) => {
-      const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
-      return next;
-    });
-  };
 
   // Which tire (if any) sits at each stand+floor slot in the currently open area.
   const occupantsForArea = (areaCode: string): Record<string, Occupant | undefined> => {
@@ -154,11 +174,35 @@ export default function TireOutward() {
     return result;
   };
 
-  const selectedTires = useMemo(() => {
-    if (!selectedWarehouse) return [];
-    const locations = new Set(Array.from(selectedBins).map((code) => locationForBin(selectedWarehouse, code)));
-    return tires.filter((t) => t.currentStage === "warehouse" && locations.has(t.location));
-  }, [selectedWarehouse, selectedBins, tires]);
+  // The tire sitting directly at the bare area code, if any — pre-existing
+  // stock placed before stand/floor tracking existed.
+  const legacyOccupantForArea = (areaCode: string): Occupant | undefined => {
+    if (!selectedWarehouse || !occupied.has(areaCode)) return undefined;
+    const location = locationForBin(selectedWarehouse, areaCode);
+    const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
+    const tire = atBin[0];
+    return tire
+      ? { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code: areaCode, count: atBin.length, models: atBin.map((t) => t.model) }
+      : undefined;
+  };
+
+  const pickerSelectedCodes = new Set(
+    selectedWarehouse
+      ? Array.from(selectedLocations)
+          .map((location) => binForLocation(selectedWarehouse, location))
+          .filter((code): code is string => code !== null)
+      : [],
+  );
+
+  const togglePickerBin = (code: string) => {
+    if (!selectedWarehouse) return;
+    toggleLocation(locationForBin(selectedWarehouse, code));
+  };
+
+  const selectedTires = useMemo(
+    () => tires.filter((t) => t.currentStage === "warehouse" && selectedLocations.has(t.location)),
+    [selectedLocations, tires],
+  );
 
   const handleConfirm = async () => {
     if (submitting || selectedTires.length === 0) return;
@@ -191,7 +235,7 @@ export default function TireOutward() {
       for (const t of updatedTires) byId.set(t.id, t);
       return Array.from(byId.values());
     });
-    setSelectedBins(new Set());
+    setSelectedLocations(new Set());
     setSuccess(`${selectedTires.length} tire${selectedTires.length === 1 ? "" : "s"} picked, ready for dispatch.`);
     setSubmitting(false);
   };
@@ -215,10 +259,6 @@ export default function TireOutward() {
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">1. Select tires</h2>
-        <p className="text-xs text-muted-foreground">
-          Pick a tire type to highlight where it's stored — you'll still tap the exact bin to remove it.
-        </p>
-
         {groups.length === 0 ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">No tires currently in the warehouse.</div>
         ) : (
@@ -252,9 +292,58 @@ export default function TireOutward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
+            <MapPin className="size-4 text-muted-foreground" />
+            2. Pick locations to remove
+          </h2>
+          {pickableLocations.length > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                setSelectedLocations((prev) =>
+                  pickableLocations.every((l) => prev.has(l.location)) ? new Set() : new Set(pickableLocations.map((l) => l.location)),
+                )
+              }
+              className="shrink-0 text-xs font-medium text-primary hover:underline"
+            >
+              {pickableLocations.every((l) => selectedLocations.has(l.location)) ? "Clear all" : "Select all"}
+            </button>
+          )}
+        </div>
+        {selectedModels.size === 0 ? (
+          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">Select a tire type above to see its locations.</div>
+        ) : pickableLocations.length === 0 ? (
+          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">No locations found for the selected tire type.</div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-96 overflow-y-auto pr-1">
+            {pickableLocations.map((loc) => {
+              const isPicked = selectedLocations.has(loc.location);
+              return (
+                <button
+                  key={loc.location}
+                  type="button"
+                  onClick={() => toggleLocation(loc.location)}
+                  title={loc.location}
+                  className={cn(
+                    "rounded-xl border-2 px-3 py-2 text-left text-xs transition-colors",
+                    isPicked ? "border-success bg-success/10" : "border-border bg-muted/40 hover:bg-muted hover:border-primary",
+                  )}
+                >
+                  <p className="font-semibold text-foreground truncate">
+                    {warehouses.length > 1 ? `${loc.warehouseLabel} · ${loc.code}` : loc.code}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
           <WarehouseIcon className="size-4 text-muted-foreground" />
-          2. Warehouse
+          3. Warehouse
         </h2>
         {warehouses.length === 0 && (
           <p className="text-sm text-muted-foreground">
@@ -272,7 +361,7 @@ export default function TireOutward() {
               type="button"
               onClick={() => {
                 setWarehouseKey(w.key);
-                setSelectedBins(new Set());
+                setSelectedLocations(new Set());
               }}
               className={cn(
                 "relative rounded-xl border px-4 py-3 text-sm font-medium transition-colors",
@@ -298,7 +387,7 @@ export default function TireOutward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">3. Pick tires to remove</h2>
+        <h2 className="text-base font-medium text-foreground">Warehouse bin map</h2>
         {!selectedWarehouse ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">Choose a warehouse first.</div>
         ) : occupied.size === 0 ? (
@@ -338,7 +427,7 @@ export default function TireOutward() {
                           const col = colIdx + 1;
                           const code = `${selectedWarehouse.prefix}${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`;
                           const hasOccupancy = areaHasOccupancy(code);
-                          const hasPick = Array.from(selectedBins).some((b) => b === code || b.startsWith(`${code}-`));
+                          const hasPick = hasOccupancy && areaHasPick(code);
                           const isMatch = hasOccupancy && areaMatchesSelection(code);
                           return (
                             <td key={colIdx} className="p-0.5">
@@ -368,48 +457,6 @@ export default function TireOutward() {
             </div>
           </>
         )}
-
-        {selectedTires.length > 0 && (
-          <div className="space-y-1.5">
-            <p className="text-sm font-medium text-foreground">Picked for outward ({selectedTires.length})</p>
-            <ul className="max-h-56 overflow-y-auto space-y-1.5">
-              {Array.from(selectedBins)
-                .sort()
-                .map((code) => {
-                  const location = selectedWarehouse ? locationForBin(selectedWarehouse, code) : "";
-                  // A bin can hold several tires of different models (no
-                  // capacity limit), so all of them need to be listed here —
-                  // not just the first one found — or the count would look
-                  // like a mismatch against selectedTires.length above.
-                  const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
-                  const modelCounts = new Map<string, number>();
-                  for (const t of atBin) modelCounts.set(t.model, (modelCounts.get(t.model) ?? 0) + 1);
-                  const modelSummary = Array.from(modelCounts.entries())
-                    .map(([model, n]) => (n > 1 ? `${model} x${n}` : model))
-                    .join(", ");
-                  return (
-                    <li
-                      key={code}
-                      className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-medium text-foreground truncate">{code}</p>
-                        <p className="text-muted-foreground truncate">{modelSummary}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeBin(code)}
-                        aria-label={`Remove ${code} from selection`}
-                        className="shrink-0 text-muted-foreground hover:text-danger"
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    </li>
-                  );
-                })}
-            </ul>
-          </div>
-        )}
       </div>
 
       <button
@@ -429,9 +476,9 @@ export default function TireOutward() {
           floorCount={floorCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
           occupants={occupantsForArea(pickerAreaCode)}
           legacyOccupant={legacyOccupantForArea(pickerAreaCode)}
-          selectedCodes={selectedBins}
+          selectedCodes={pickerSelectedCodes}
           selectedModels={selectedModels}
-          onToggle={toggleBinForRemoval}
+          onToggle={togglePickerBin}
           onDone={() => setPickerAreaCode(null)}
         />
       )}
