@@ -33,7 +33,10 @@ export default function TireOutward() {
 
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [warehouseKey, setWarehouseKey] = useState("");
-  const [selectedLocations, setSelectedLocations] = useState<Set<string>>(new Set());
+  // How many tires to pick from each location, keyed by location string.
+  // A location can be partially picked (fewer than everything sitting
+  // there) — capped per-location at how many tires actually sit there.
+  const [pickedCounts, setPickedCounts] = useState<Record<string, number>>({});
   const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
   const [scanningWarehouse, setScanningWarehouse] = useState(false);
 
@@ -97,14 +100,14 @@ export default function TireOutward() {
   // warehouse/bin-map above — an operator who already knows the location can
   // pick it directly here without ever choosing a warehouse or opening the map.
   const occupiedLocations = useMemo(() => {
-    const list: { location: string; warehouseLabel: string; code: string; models: string[] }[] = [];
+    const list: { location: string; warehouseLabel: string; code: string; models: string[]; count: number }[] = [];
     for (const w of warehouses) {
       const occ = occupiedBins(w, tires);
       for (const code of occ) {
         const location = locationForBin(w, code);
         const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
         if (atBin.length === 0) continue;
-        list.push({ location, warehouseLabel: w.label, code, models: Array.from(new Set(atBin.map((t) => t.model))) });
+        list.push({ location, warehouseLabel: w.label, code, models: Array.from(new Set(atBin.map((t) => t.model))), count: atBin.length });
       }
     }
     return list.sort((a, b) => a.location.localeCompare(b.location));
@@ -117,13 +120,34 @@ export default function TireOutward() {
     [occupiedLocations, selectedModels],
   );
 
-  const toggleLocation = (location: string) => {
-    setSelectedLocations((prev) => {
-      const next = new Set(prev);
-      if (next.has(location)) next.delete(location);
-      else next.add(location);
-      return next;
+  // Total tires physically sitting at each location — the ceiling a
+  // location's pick quantity can never exceed.
+  const locationTotals = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const loc of occupiedLocations) map.set(loc.location, loc.count);
+    return map;
+  }, [occupiedLocations]);
+
+  const pickedQtyAt = (location: string) => pickedCounts[location] ?? 0;
+
+  const setLocationQty = (location: string, qty: number) => {
+    const max = locationTotals.get(location) ?? 0;
+    const clamped = Math.max(0, Math.min(qty, max));
+    setPickedCounts((prev) => {
+      if (clamped === 0) {
+        if (!(location in prev)) return prev;
+        const next = { ...prev };
+        delete next[location];
+        return next;
+      }
+      return { ...prev, [location]: clamped };
     });
+  };
+
+  // Used by the 3D bin-map picker — a tap there is all-or-nothing (matches
+  // its existing behavior), unlike the quantity stepper on the flat list.
+  const toggleLocation = (location: string) => {
+    setLocationQty(location, pickedQtyAt(location) > 0 ? 0 : (locationTotals.get(location) ?? 0));
   };
 
   // Whether an area (any of its occupied slots, including a legacy bare-area
@@ -142,8 +166,8 @@ export default function TireOutward() {
   };
 
   const areaHasPick = (areaCode: string) =>
-    Array.from(selectedLocations).some((location) => {
-      if (!selectedWarehouse) return false;
+    Object.keys(pickedCounts).some((location) => {
+      if (!selectedWarehouse || pickedQtyAt(location) <= 0) return false;
       const code = binForLocation(selectedWarehouse, location);
       return code === areaCode || code?.startsWith(`${areaCode}-`);
     });
@@ -185,7 +209,8 @@ export default function TireOutward() {
 
   const pickerSelectedCodes = new Set(
     selectedWarehouse
-      ? Array.from(selectedLocations)
+      ? Object.keys(pickedCounts)
+          .filter((location) => pickedQtyAt(location) > 0)
           .map((location) => binForLocation(selectedWarehouse, location))
           .filter((code): code is string => code !== null)
       : [],
@@ -196,10 +221,17 @@ export default function TireOutward() {
     toggleLocation(locationForBin(selectedWarehouse, code));
   };
 
-  const selectedTires = useMemo(
-    () => tires.filter((t) => t.currentStage === "warehouse" && selectedLocations.has(t.location)),
-    [selectedLocations, tires],
-  );
+  // A location can be partially picked, so this takes exactly `qty` tire
+  // records from each picked location — not every tire sitting there.
+  const selectedTires = useMemo(() => {
+    const result: Tire[] = [];
+    for (const [location, qty] of Object.entries(pickedCounts)) {
+      if (qty <= 0) continue;
+      const atLocation = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
+      result.push(...atLocation.slice(0, qty));
+    }
+    return result;
+  }, [pickedCounts, tires]);
 
   const handleConfirm = async () => {
     if (submitting || selectedTires.length === 0) return;
@@ -232,7 +264,7 @@ export default function TireOutward() {
       for (const t of updatedTires) byId.set(t.id, t);
       return Array.from(byId.values());
     });
-    setSelectedLocations(new Set());
+    setPickedCounts({});
     setSuccess(`${selectedTires.length} tire${selectedTires.length === 1 ? "" : "s"} picked, ready for dispatch.`);
     setSubmitting(false);
   };
@@ -298,13 +330,17 @@ export default function TireOutward() {
             <button
               type="button"
               onClick={() =>
-                setSelectedLocations((prev) =>
-                  pickableLocations.every((l) => prev.has(l.location)) ? new Set() : new Set(pickableLocations.map((l) => l.location)),
-                )
+                setPickedCounts((prev) => {
+                  const allFull = pickableLocations.every((l) => (prev[l.location] ?? 0) >= l.count);
+                  if (allFull) return {};
+                  const next: Record<string, number> = {};
+                  for (const l of pickableLocations) next[l.location] = l.count;
+                  return next;
+                })
               }
               className="shrink-0 text-xs font-medium text-primary hover:underline"
             >
-              {pickableLocations.every((l) => selectedLocations.has(l.location)) ? "Clear all" : "Select all"}
+              {pickableLocations.every((l) => (pickedCounts[l.location] ?? 0) >= l.count) ? "Clear all" : "Select all"}
             </button>
           )}
         </div>
@@ -315,22 +351,44 @@ export default function TireOutward() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-96 overflow-y-auto pr-1">
             {pickableLocations.map((loc) => {
-              const isPicked = selectedLocations.has(loc.location);
+              const qty = pickedQtyAt(loc.location);
+              const isPicked = qty > 0;
               return (
-                <button
+                <div
                   key={loc.location}
-                  type="button"
-                  onClick={() => toggleLocation(loc.location)}
                   title={loc.location}
                   className={cn(
-                    "rounded-xl border-2 px-3 py-2 text-left text-xs transition-colors",
-                    isPicked ? "border-success bg-success/10" : "border-border bg-muted/40 hover:bg-muted hover:border-primary",
+                    "rounded-xl border-2 px-3 py-2 text-xs transition-colors",
+                    isPicked ? "border-success bg-success/10" : "border-border bg-muted/40",
                   )}
                 >
                   <p className="font-semibold text-foreground truncate">
                     {warehouses.length > 1 ? `${loc.warehouseLabel} · ${loc.code}` : loc.code}
                   </p>
-                </button>
+                  <div className="mt-1.5 flex items-center justify-between gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setLocationQty(loc.location, qty - 1)}
+                      disabled={qty <= 0}
+                      aria-label={`Pick one fewer tire from ${loc.code}`}
+                      className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-card text-sm font-bold text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      −
+                    </button>
+                    <span className="font-medium text-foreground">
+                      {qty}/{loc.count}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setLocationQty(loc.location, qty + 1)}
+                      disabled={qty >= loc.count}
+                      aria-label={`Pick one more tire from ${loc.code}`}
+                      className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-card text-sm font-bold text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -371,7 +429,7 @@ export default function TireOutward() {
               type="button"
               onClick={() => {
                 setWarehouseKey(w.key);
-                setSelectedLocations(new Set());
+                setPickedCounts({});
               }}
               className={cn(
                 "relative rounded-xl border px-4 py-3 text-sm font-medium transition-colors",
@@ -487,7 +545,7 @@ export default function TireOutward() {
           warehouses={warehouses}
           onMatch={(key) => {
             setWarehouseKey(key);
-            setSelectedLocations(new Set());
+            setPickedCounts({});
             setScanningWarehouse(false);
           }}
           onClose={() => setScanningWarehouse(false)}

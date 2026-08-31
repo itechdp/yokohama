@@ -8,8 +8,8 @@ export interface WarehouseDef {
   label: string;
   prefix: string;
   columnRowCounts: number[]; // index 0 = column 01, value = max row number in that column
-  // Optional per-column stand count: how many stands (A, B, C, ... — see
-  // STAND_IDS) the picker shows for every area in that column. Applies
+  // Optional per-column stand count: how many stands (X, Y, Z, then A, B,
+  // C, ... — see STAND_IDS) the picker shows for every area in that column. Applies
   // uniformly to every row/area in the column, same as columnRowCounts.
   // Missing entries, or a missing array entirely, default to 1 stand.
   columnStandCounts?: number[];
@@ -21,9 +21,15 @@ export interface WarehouseDef {
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-// Stand letters, A, B, C, ... — no fixed cap, same as floors. 26 covers any
-// realistic physical layout; extend here if a warehouse ever needs more.
-export const STAND_IDS: string[] = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
+// Stand letters — X, Y, Z first, then A, B, C, ... — no fixed cap, same as
+// floors. 26 covers any realistic physical layout; extend here if a
+// warehouse ever needs more.
+export const STAND_IDS: string[] = [
+  "X",
+  "Y",
+  "Z",
+  ...Array.from({ length: 23 }, (_, i) => String.fromCharCode(65 + i)), // A..W
+];
 // Default floor count for a column that hasn't configured its own.
 export const FLOOR_COUNT = 6;
 

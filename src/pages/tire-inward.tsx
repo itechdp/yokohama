@@ -439,7 +439,7 @@ export default function TireInward() {
                 />
               </label>
 
-              {/* STAND — only shown when this column has more than one stand; otherwise auto-picked as the first (A) */}
+              {/* STAND — only shown when this column has more than one stand; otherwise auto-picked as the first (X) */}
               {manualStandCount > 1 && (
                 <label className="block space-y-1.5">
                   <span className="text-sm font-medium text-foreground">Select Stand</span>
