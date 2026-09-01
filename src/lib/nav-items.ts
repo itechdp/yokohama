@@ -4,6 +4,7 @@ import {
   History,
   LayoutGrid,
   List,
+  PackageSearch,
   Truck,
   Warehouse,
   type LucideIcon,
@@ -21,6 +22,7 @@ export interface NavItem {
 export const FEATURE_ITEMS: NavItem[] = [
   { to: "/tires/inward", label: "Inward", icon: ArrowDownToLine },
   { to: "/tires/outward", label: "Outward", icon: ArrowUpFromLine },
+  { to: "/tires/stock", label: "Stock", icon: PackageSearch },
   { to: "/tires/skus", label: "Show tire", icon: List },
   { to: "/tires/dispatch", label: "Dispatch", icon: Truck },
   { to: "/bays", label: "Loading Bay", icon: LayoutGrid },
