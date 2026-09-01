@@ -30,13 +30,37 @@ export default function SelectMenu({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [rect, setRect] = useState<{
+    left: number;
+    width: number;
+    maxHeight: number;
+    top?: number;
+    bottom?: number;
+  } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
+  // Anchored below the trigger by default, same as before. But near the
+  // bottom of a short viewport (mobile especially) that can push most of the
+  // list off-screen — so when there isn't enough room below, flip it to open
+  // upward instead, and always cap the height to whatever space is actually
+  // available rather than a flat 224px, so the full list stays reachable.
   const updateRect = () => {
     const r = buttonRef.current?.getBoundingClientRect();
-    if (r) setRect({ top: r.bottom, left: r.left, width: r.width });
+    if (!r) return;
+    const margin = 8;
+    const preferredMaxHeight = 224; // matches the old max-h-56
+    const minUsableHeight = 120;
+    const spaceBelow = window.innerHeight - r.bottom - margin;
+    const spaceAbove = r.top - margin;
+    const openUp = spaceBelow < minUsableHeight && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(80, Math.min(preferredMaxHeight, openUp ? spaceAbove : spaceBelow));
+    setRect({
+      left: r.left,
+      width: r.width,
+      maxHeight,
+      ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+    });
   };
 
   useEffect(() => {
@@ -82,8 +106,14 @@ export default function SelectMenu({
         createPortal(
           <div
             ref={listRef}
-            style={{ position: "fixed", top: rect.top + 4, left: rect.left, width: rect.width }}
-            className="z-[100] max-h-56 overflow-y-auto rounded-lg border border-border bg-card shadow-lg py-1"
+            style={{
+              position: "fixed",
+              left: rect.left,
+              width: rect.width,
+              maxHeight: rect.maxHeight,
+              ...(rect.top !== undefined ? { top: rect.top } : { bottom: rect.bottom }),
+            }}
+            className="z-[100] overflow-y-auto rounded-lg border border-border bg-card shadow-lg py-1"
           >
             {options.length === 0 ? (
               <p className="px-3 py-2 text-xs text-muted-foreground">No options</p>
