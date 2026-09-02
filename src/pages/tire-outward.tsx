@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ArrowUpFromLine, MapPin, QrCode, Warehouse as WarehouseIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import QrScanner from "@/components/qr-scanner";
 import StandFloorRemovePicker, { type Occupant } from "@/components/stand-floor-remove-picker";
 import SuccessOverlay from "@/components/success-overlay";
-import WarehouseQrScanner from "@/components/warehouse-qr-scanner";
 import {
   binForLocation,
   floorCountAt,
@@ -38,7 +38,7 @@ export default function TireOutward() {
   // there) — capped per-location at how many tires actually sit there.
   const [pickedCounts, setPickedCounts] = useState<Record<string, number>>({});
   const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
-  const [scanningWarehouse, setScanningWarehouse] = useState(false);
+  const [scanningTire, setScanningTire] = useState(false);
 
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -65,6 +65,20 @@ export default function TireOutward() {
     }
     return Array.from(map.values()).sort((a, b) => a.model.localeCompare(b.model));
   }, [candidates]);
+
+  // "Scan tire QR" — the code printed on a tire encodes its Material value.
+  // Outward only deals with tires already sitting in the warehouse, so a
+  // match here means one of the in-stock `groups` carries that Material
+  // (stashed as `material`, from the tire's serialNumber); selecting it is
+  // the same as ticking it in the list.
+  const handleTireDecode = async (code: string): Promise<boolean> => {
+    const material = code.trim();
+    if (!material) return false;
+    const group = groups.find((g) => (g.material ?? "").toLowerCase() === material.toLowerCase());
+    if (!group) return false;
+    setSelectedModels((prev) => new Set(prev).add(group.model));
+    return true;
+  };
 
   const toggleModel = (model: string) => {
     setSelectedModels((prev) => {
@@ -287,7 +301,18 @@ export default function TireOutward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">1. Select tires</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-medium text-foreground">1. Select tires</h2>
+          <button
+            type="button"
+            onClick={() => setScanningTire(true)}
+            aria-label="Scan tire QR"
+            title="Scan tire QR"
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-muted transition-colors shrink-0"
+          >
+            <QrCode className="size-4" />
+          </button>
+        </div>
         {groups.length === 0 ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">No tires currently in the warehouse.</div>
         ) : (
@@ -396,23 +421,10 @@ export default function TireOutward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
-            <WarehouseIcon className="size-4 text-muted-foreground" />
-            3. Warehouse
-          </h2>
-          {warehouses.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setScanningWarehouse(true)}
-              aria-label="Scan warehouse QR"
-              title="Scan warehouse QR"
-              className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-muted transition-colors shrink-0"
-            >
-              <QrCode className="size-4" />
-            </button>
-          )}
-        </div>
+        <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
+          <WarehouseIcon className="size-4 text-muted-foreground" />
+          3. Warehouse
+        </h2>
         {warehouses.length === 0 && (
           <p className="text-sm text-muted-foreground">
             No warehouses set up yet — add one on the{" "}
@@ -540,15 +552,12 @@ export default function TireOutward() {
         />
       )}
 
-      {scanningWarehouse && (
-        <WarehouseQrScanner
-          warehouses={warehouses}
-          onMatch={(key) => {
-            setWarehouseKey(key);
-            setPickedCounts({});
-            setScanningWarehouse(false);
-          }}
-          onClose={() => setScanningWarehouse(false)}
+      {scanningTire && (
+        <QrScanner
+          title="Scan tire QR"
+          notFoundLabel="tire"
+          onDecode={handleTireDecode}
+          onClose={() => setScanningTire(false)}
         />
       )}
     </div>

@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 import { X } from "lucide-react";
-import type { WarehouseDef } from "@/data/warehouse-bins";
 
-// Scans a QR code via the device camera and matches its text against a
-// warehouse's `key`. Decoding runs client-side (jsQR against canvas frames)
-// so it works the same in the browser and inside the Capacitor WebView.
-export default function WarehouseQrScanner({
-  warehouses,
-  onMatch,
+// Scans a QR/barcode via the device camera and hands the decoded text to
+// `onDecode`, which does the actual lookup (tire Material, warehouse key, ...)
+// and resolves to whether it matched. Decoding runs client-side (jsQR against
+// canvas frames) so it works the same in the browser and inside the
+// Capacitor WebView.
+export default function QrScanner({
+  title,
+  notFoundLabel,
+  onDecode,
   onClose,
 }: {
-  warehouses: WarehouseDef[];
-  onMatch: (key: string) => void;
+  title: string;
+  notFoundLabel: string;
+  onDecode: (code: string) => Promise<boolean>;
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -21,6 +24,13 @@ export default function WarehouseQrScanner({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState<string | null>(null);
+  // Kept in a ref (rather than a camera-setup effect dependency) so a fresh
+  // onDecode closure each render — it closes over the page's live state —
+  // doesn't tear down and restart the camera stream on every keystroke.
+  const onDecodeRef = useRef(onDecode);
+  useEffect(() => {
+    onDecodeRef.current = onDecode;
+  }, [onDecode]);
 
   // Phones vary widely in camera resolution and CPU headroom, so the decode
   // work is deliberately throttled and downscaled — decoding every frame at
@@ -30,28 +40,28 @@ export default function WarehouseQrScanner({
   const SCAN_INTERVAL_MS = 80;
   const MAX_DECODE_WIDTH = 640;
 
-  // A short ascending two-note chime played whenever any QR code is decoded
-  // (matched or not) — built with WebAudio instead of an audio file, so
-  // there's nothing to bundle and it works offline the same in the browser
-  // and the Capacitor WebView.
+  // A single sharp high-pitched beep played whenever any code is decoded
+  // (matched or not) — the classic retail laser-scanner "beep" (single square
+  // wave tone, near-instant attack/decay) rather than a soft musical chime.
+  // Built with WebAudio instead of an audio file, so there's nothing to
+  // bundle and it works offline the same in the browser and the Capacitor
+  // WebView.
   const playScanChime = () => {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
     if (ctx.state === "suspended") void ctx.resume();
     const now = ctx.currentTime;
-    [880, 1318.51].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      const start = now + i * 0.09;
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.25, start + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(start);
-      osc.stop(start + 0.2);
-    });
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = 2800;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.18, now + 0.004);
+    gain.gain.setValueAtTime(0.18, now + 0.075);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.1);
   };
 
   useEffect(() => {
@@ -73,11 +83,14 @@ export default function WarehouseQrScanner({
     let cancelled = false;
     let lastScan = 0;
     // Tracks the last decoded text so the chime fires once per code, not on
-    // every ~80ms tick the same QR sits in frame. A single missed frame
+    // every ~80ms tick the same code sits in frame. A single missed frame
     // (motion blur, autofocus hiccup) shouldn't count as "gone" — only clear
     // it after the code hasn't been seen for a bit, via a debounced timer.
     let lastCode: string | null = null;
     let resetTimer: ReturnType<typeof setTimeout> | null = null;
+    // Guards against firing a second lookup while the first is still
+    // in flight (Supabase lookups are async, unlike the old in-memory match).
+    let busy = false;
 
     const scheduleReset = () => {
       if (resetTimer) clearTimeout(resetTimer);
@@ -99,18 +112,20 @@ export default function WarehouseQrScanner({
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const code = jsQR(imageData.data, imageData.width, imageData.height);
-          if (code?.data) {
+          if (code?.data && code.data !== lastCode && !busy) {
+            lastCode = code.data;
             scheduleReset();
-            if (code.data !== lastCode) {
-              lastCode = code.data;
-              playScanChime();
-              const match = warehouses.find((w) => w.key === code.data);
-              if (match) {
-                onMatch(match.key);
-                return;
+            playScanChime();
+            busy = true;
+            const scanned = code.data;
+            onDecodeRef.current(scanned).then((matched) => {
+              busy = false;
+              if (matched) {
+                onClose();
+              } else {
+                setNotFound(scanned);
               }
-              setNotFound(code.data);
-            }
+            });
           }
         }
       }
@@ -150,14 +165,13 @@ export default function WarehouseQrScanner({
       if (resetTimer) clearTimeout(resetTimer);
       stream?.getTracks().forEach((t) => t.stop());
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [warehouses]);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-card p-4 shadow-xl space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-medium text-foreground">Scan warehouse QR</h2>
+          <h2 className="text-base font-medium text-foreground">{title}</h2>
           <button type="button" onClick={onClose} aria-label="Close scanner" className="text-muted-foreground hover:text-foreground">
             <X className="size-5" />
           </button>
@@ -174,7 +188,7 @@ export default function WarehouseQrScanner({
 
         {notFound && (
           <p className="text-xs text-danger">
-            Scanned "{notFound}" — no warehouse matches that code.
+            Scanned "{notFound}" — no {notFoundLabel} matches that code.
           </p>
         )}
       </div>

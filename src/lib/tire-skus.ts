@@ -37,6 +37,27 @@ export async function fetchTireSkusPage(params: {
   return { rows: data ?? [], count: count ?? 0 };
 }
 
+// Exact Material lookup — used by the "Scan tire QR" flow, where the code
+// printed on a tire encodes its Material value and has to resolve to exactly
+// one SKU (unlike the fuzzy ilike search used for the autocomplete).
+export async function fetchTireSkuByMaterial(material: string): Promise<TireSkuRow | null> {
+  const m = material.trim();
+  if (!m) return null;
+
+  const { data, error } = await supabase
+    .from("tire_skus")
+    .select("*")
+    .ilike("material", m)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("tire_skus material lookup failed:", error.message);
+    return null;
+  }
+  return data ?? null;
+}
+
 // Looks up SKUs by material/description for the Add Tire autocomplete.
 export async function searchTireSkus(query: string, limit = 8): Promise<TireSkuRow[]> {
   const q = query.trim();

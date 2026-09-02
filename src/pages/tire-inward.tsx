@@ -3,16 +3,16 @@ import { Link } from "react-router";
 import { ArrowDownToLine, ArrowLeftRight, QrCode, Search, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ExchangeLocationModal from "@/components/exchange-location-modal";
+import QrScanner from "@/components/qr-scanner";
 import QtyStepper from "@/components/qty-stepper";
 import SelectMenu from "@/components/select-menu";
 import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
-import WarehouseQrScanner from "@/components/warehouse-qr-scanner";
 import { binCounts, firstBin, floorCountAt, locationForBin, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
 import { insertTireHistory } from "@/lib/tire-history";
-import { fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
+import { fetchTireSkuByMaterial, fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
 import { fetchTires, upsertTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { TireSkuRow } from "@/lib/supabase";
@@ -44,7 +44,7 @@ export default function TireInward() {
   const [submitting, setSubmitting] = useState(false);
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
-  const [scanningWarehouse, setScanningWarehouse] = useState(false);
+  const [scanningTire, setScanningTire] = useState(false);
 
   useEffect(() => {
     fetchTires().then(setTires);
@@ -69,6 +69,19 @@ export default function TireInward() {
         },
       ];
     });
+  };
+
+  // "Scan tire QR" — the code printed on a tire encodes its Material value
+  // (the same column the catalog search matches on), so a scan just needs to
+  // resolve that Material to a SKU and add it exactly like a search pick.
+  const handleTireDecode = async (code: string): Promise<boolean> => {
+    const material = code.trim();
+    if (!material) return false;
+    if (selectedTires.some((t) => t.material.toLowerCase() === material.toLowerCase())) return true;
+    const sku = await fetchTireSkuByMaterial(material);
+    if (!sku) return false;
+    addTireFromCatalog(sku);
+    return true;
   };
 
   const removeSelectedTire = (key: string) => {
@@ -279,7 +292,18 @@ export default function TireInward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">1. Select tires</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-medium text-foreground">1. Select tires</h2>
+          <button
+            type="button"
+            onClick={() => setScanningTire(true)}
+            aria-label="Scan tire QR"
+            title="Scan tire QR"
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-muted transition-colors shrink-0"
+          >
+            <QrCode className="size-4" />
+          </button>
+        </div>
 
         <TireCatalogSearch alreadySelected={selectedTires.map((t) => t.material)} onSelect={addTireFromCatalog} />
 
@@ -324,15 +348,6 @@ export default function TireInward() {
             2. Warehouse
           </h2>
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setScanningWarehouse(true)}
-              aria-label="Scan warehouse QR"
-              title="Scan warehouse QR"
-              className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-muted transition-colors"
-            >
-              <QrCode className="size-4" />
-            </button>
             <button
               type="button"
               onClick={() => setExchangeOpen(true)}
@@ -623,20 +638,12 @@ export default function TireInward() {
         />
       )}
 
-      {scanningWarehouse && (
-        <WarehouseQrScanner
-          warehouses={warehouses}
-          onMatch={(key) => {
-            setWarehouseKey(key);
-            setSelectedBins(new Set());
-            setManualRow("");
-            setManualCol("");
-            setManualStand("");
-            setManualFloor("");
-            setManualError(null);
-            setScanningWarehouse(false);
-          }}
-          onClose={() => setScanningWarehouse(false)}
+      {scanningTire && (
+        <QrScanner
+          title="Scan tire QR"
+          notFoundLabel="tire"
+          onDecode={handleTireDecode}
+          onClose={() => setScanningTire(false)}
         />
       )}
     </div>
