@@ -131,7 +131,18 @@ export default function WarehouseQrScanner({
         }
         rafRef.current = requestAnimationFrame(tick);
       })
-      .catch(() => setError("Couldn't access the camera — check permissions and try again."));
+      .catch((err: unknown) => {
+        const name = err instanceof Error ? err.name : "";
+        if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+          setError(
+            "Camera access is blocked for this app. Open your phone's Settings > Apps > Crown Pvt. Ltd. > Permissions > Camera and set it to Allow, then reopen this scanner."
+          );
+        } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+          setError("No camera was found on this device.");
+        } else {
+          setError("Couldn't access the camera — check permissions and try again.");
+        }
+      });
 
     return () => {
       cancelled = true;
