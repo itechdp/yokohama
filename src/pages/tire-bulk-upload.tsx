@@ -82,9 +82,6 @@ export default function TireBulkUpload() {
             <UploadCloud className="size-6 text-primary" />
             Bulk upload tires
           </h1>
-          <p className="text-muted-foreground">
-            Upload an Excel file with columns: Material, Tire Description-Brand, Ply Rating Bottom, Brand, SKU QRCode.
-          </p>
         </div>
         <Link
           to="/"

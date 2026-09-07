@@ -66,20 +66,6 @@ export default function TireOutward() {
     return Array.from(map.values()).sort((a, b) => a.model.localeCompare(b.model));
   }, [candidates]);
 
-  // "Scan tire QR" — the code printed on a tire encodes its Material value.
-  // Outward only deals with tires already sitting in the warehouse, so a
-  // match here means one of the in-stock `groups` carries that Material
-  // (stashed as `material`, from the tire's serialNumber); selecting it is
-  // the same as ticking it in the list.
-  const handleTireDecode = async (code: string): Promise<boolean> => {
-    const material = code.trim();
-    if (!material) return false;
-    const group = groups.find((g) => (g.material ?? "").toLowerCase() === material.toLowerCase());
-    if (!group) return false;
-    setSelectedModels((prev) => new Set(prev).add(group.model));
-    return true;
-  };
-
   const toggleModel = (model: string) => {
     setSelectedModels((prev) => {
       const next = new Set(prev);
@@ -156,6 +142,23 @@ export default function TireOutward() {
       }
       return { ...prev, [location]: clamped };
     });
+  };
+
+  // "Scan tire QR" — the code printed on a tire's SKU label encodes its
+  // sku_qr_code, resolving to one exact physical unit. Since we know exactly
+  // which tire that is, this both selects its model and picks it (bumps that
+  // one unit's location by one) — a match here is a precise pick, not just a
+  // type filter like the search list above.
+  const handleTireDecode = async (code: string): Promise<boolean> => {
+    const skuQrCode = code.trim();
+    if (!skuQrCode) return false;
+    const tire = candidates.find((t) => (t.skuQrCode ?? "").toLowerCase() === skuQrCode.toLowerCase());
+    if (!tire) return false;
+    setSelectedModels((prev) => new Set(prev).add(tire.model));
+    const w = warehouses.find((w) => binForLocation(w, tire.location));
+    if (w) setWarehouseKey(w.key);
+    setLocationQty(tire.location, pickedQtyAt(tire.location) + 1);
+    return true;
   };
 
   // Used by the 3D bin-map picker — a tap there is all-or-nothing (matches
