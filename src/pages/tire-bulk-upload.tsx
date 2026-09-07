@@ -27,7 +27,7 @@ export default function TireBulkUpload() {
       const buffer = await file.arrayBuffer();
       const rows = parseCatalogWorkbook(buffer);
       if (rows.length === 0) {
-        setError("No rows found in that file. Expected columns: Material, Tire Description-Brand, Ply Rating Bottom, Brand.");
+        setError("No rows found in that file. Expected columns: Material, Tire Description-Brand, Ply Rating Bottom, Brand, SKU QRCode.");
         setParsedRows([]);
         setFileName(null);
         return;
@@ -45,7 +45,7 @@ export default function TireBulkUpload() {
     setError(null);
     setSuccess(null);
     if (parsedRows.length === 0) {
-      setError("Upload an Excel file with Material, Tire Description-Brand, Ply Rating Bottom, and Brand.");
+      setError("Upload an Excel file with Material, Tire Description-Brand, Ply Rating Bottom, Brand, and SKU QRCode.");
       return;
     }
 
@@ -83,7 +83,7 @@ export default function TireBulkUpload() {
             Bulk upload tires
           </h1>
           <p className="text-muted-foreground">
-            Upload an Excel file with columns: Material, Tire Description-Brand, Ply Rating Bottom, Brand.
+            Upload an Excel file with columns: Material, Tire Description-Brand, Ply Rating Bottom, Brand, SKU QRCode.
           </p>
         </div>
         <Link
@@ -132,6 +132,7 @@ export default function TireBulkUpload() {
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground">Tire Description-Brand</th>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground">Ply Rating Bottom</th>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground">Brand</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">SKU QRCode</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -141,6 +142,7 @@ export default function TireBulkUpload() {
                       <td className="px-3 py-2 text-foreground">{row.description}</td>
                       <td className="px-3 py-2 text-muted-foreground">{row.plyRatingBottom || "—"}</td>
                       <td className="px-3 py-2 text-muted-foreground">{row.brand || "—"}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{row.skuQrCode || "—"}</td>
                     </tr>
                   ))}
                 </tbody>

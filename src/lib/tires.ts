@@ -15,6 +15,7 @@ interface TireRow {
   cost_price: number;
   ply_rating_bottom: string | null;
   brand: string | null;
+  sku_qr_code: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -34,6 +35,7 @@ function fromRow(row: TireRow): Tire {
     costPrice: row.cost_price,
     plyRatingBottom: row.ply_rating_bottom ?? undefined,
     brand: row.brand ?? undefined,
+    skuQrCode: row.sku_qr_code ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -54,6 +56,7 @@ function toRow(tire: Tire) {
     cost_price: tire.costPrice,
     ply_rating_bottom: tire.plyRatingBottom || null,
     brand: tire.brand || null,
+    sku_qr_code: tire.skuQrCode || null,
   };
 }
 
@@ -64,6 +67,27 @@ export async function fetchTires(): Promise<Tire[]> {
     return [];
   }
   return (data ?? []).map(fromRow);
+}
+
+// Exact SKU QR Code lookup — used by the "Scan tire QR" flow, where the code
+// printed on a tire's SKU label encodes its sku_qr_code and has to resolve to
+// exactly one physical tire unit.
+export async function fetchTireBySkuQrCode(skuQrCode: string): Promise<Tire | null> {
+  const code = skuQrCode.trim();
+  if (!code) return null;
+
+  const { data, error } = await supabase
+    .from("tires")
+    .select("*")
+    .eq("sku_qr_code", code)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("tires sku_qr_code lookup failed:", error.message);
+    return null;
+  }
+  return data ? fromRow(data) : null;
 }
 
 // New tire units (Add Tire, Bulk upload).

@@ -6,6 +6,7 @@ export interface CatalogRow {
   description: string;
   plyRatingBottom: string;
   brand: string;
+  skuQrCode: string;
 }
 
 const HEADER_WORDS = /^material$/i;
@@ -27,11 +28,11 @@ export function parseCatalogText(text: string): CatalogRow[] {
     parts = parts.map((p) => p.trim());
     if (parts.length < 2) continue;
 
-    const [material, description = "", plyRatingBottom = "", brand = ""] = parts;
+    const [material, description = "", plyRatingBottom = "", brand = "", skuQrCode = ""] = parts;
     if (HEADER_WORDS.test(material)) continue;
     if (!material || !description) continue;
 
-    rows.push({ material, description, plyRatingBottom, brand });
+    rows.push({ material, description, plyRatingBottom, brand, skuQrCode });
   }
   return rows;
 }
@@ -40,8 +41,9 @@ export function parseCatalogText(text: string): CatalogRow[] {
 // multiple tabs are common — e.g. a spreadsheet split across "Sheet1" /
 // "Sheet2" — and rows on any tab but the first used to get silently dropped).
 // Expects columns in the order Material, Tire Description-Brand, Ply Rating
-// Bottom, Brand on each sheet (a header row matching that is optional and
-// gets skipped automatically, per sheet).
+// Bottom, Brand, SKU QRCode on each sheet (a header row matching that is
+// optional and gets skipped automatically, per sheet; SKU QRCode is optional
+// per row).
 export function parseCatalogWorkbook(data: ArrayBuffer): CatalogRow[] {
   const workbook = XLSX.read(data, { type: "array" });
   const result: CatalogRow[] = [];
@@ -62,8 +64,9 @@ export function parseCatalogWorkbook(data: ArrayBuffer): CatalogRow[] {
       const description = String(r[1] ?? "").trim();
       const plyRatingBottom = String(r[2] ?? "").trim();
       const brand = String(r[3] ?? "").trim();
+      const skuQrCode = String(r[4] ?? "").trim();
       if (!material || !description) continue;
-      result.push({ material, description, plyRatingBottom, brand });
+      result.push({ material, description, plyRatingBottom, brand, skuQrCode });
     }
   }
 
@@ -85,6 +88,7 @@ export function buildTireFromCatalogRow(row: CatalogRow, id: string, now: string
     costPrice: 0,
     plyRatingBottom: row.plyRatingBottom || undefined,
     brand: row.brand || undefined,
+    skuQrCode: row.skuQrCode || undefined,
     createdAt: now,
     updatedAt: now,
   };

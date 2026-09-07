@@ -20,12 +20,18 @@ create table if not exists public.tires (
   cost_price numeric not null default 0,
   ply_rating_bottom text,
   brand text,
+  sku_qr_code text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 create index if not exists tires_current_stage_idx on public.tires (current_stage);
 create index if not exists tires_serial_number_idx on public.tires (serial_number);
+
+-- Unique so a scanned SKU QR Code (Inward "Scan tire QR") resolves to exactly
+-- one tire. NULLs don't conflict with each other, so tires without a code
+-- coexist fine.
+create unique index if not exists tires_sku_qr_code_key on public.tires (sku_qr_code);
 
 drop trigger if exists set_tires_updated_at on public.tires;
 create trigger set_tires_updated_at

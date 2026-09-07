@@ -34,6 +34,7 @@ export interface Tire {
   costPrice: number;
   plyRatingBottom?: string;
   brand?: string;
+  skuQrCode?: string;
   createdAt: string;
   updatedAt: string;
 }

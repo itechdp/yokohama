@@ -12,8 +12,8 @@ import { binCounts, firstBin, floorCountAt, locationForBin, STAND_IDS, standCoun
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
 import { insertTireHistory } from "@/lib/tire-history";
-import { fetchTireSkuByMaterial, fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
-import { fetchTires, upsertTires } from "@/lib/tires";
+import { fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
+import { fetchTireBySkuQrCode, fetchTires, upsertTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { TireSkuRow } from "@/lib/supabase";
 import type { PlacementLog, StageHistory, Tire } from "@/types/tire";
@@ -54,33 +54,37 @@ export default function TireInward() {
     });
   }, []);
 
-  const addTireFromCatalog = (sku: TireSkuRow) => {
+  const addSelectedTire = (entry: { material: string; model: string; brand?: string; plyRatingBottom?: string }) => {
     setSelectedTires((prev) => {
-      if (prev.some((t) => t.material === sku.material)) return prev;
-      return [
-        ...prev,
-        {
-          key: sku.material,
-          material: sku.material,
-          model: sku.description,
-          brand: sku.brand ?? undefined,
-          plyRatingBottom: sku.ply_rating_bottom ?? undefined,
-          qty: 1,
-        },
-      ];
+      if (prev.some((t) => t.material === entry.material)) return prev;
+      return [...prev, { key: entry.material, qty: 1, ...entry }];
     });
   };
 
-  // "Scan tire QR" — the code printed on a tire encodes its Material value
-  // (the same column the catalog search matches on), so a scan just needs to
-  // resolve that Material to a SKU and add it exactly like a search pick.
+  const addTireFromCatalog = (sku: TireSkuRow) =>
+    addSelectedTire({
+      material: sku.material,
+      model: sku.description,
+      brand: sku.brand ?? undefined,
+      plyRatingBottom: sku.ply_rating_bottom ?? undefined,
+    });
+
+  // "Scan tire QR" — the code printed on a tire's SKU label encodes its
+  // sku_qr_code, a per-unit code distinct from Material (the catalog/model
+  // identifier). A scan resolves that sku_qr_code to exactly one physical
+  // tire, then adds its Material to the selection like a search pick.
   const handleTireDecode = async (code: string): Promise<boolean> => {
-    const material = code.trim();
-    if (!material) return false;
-    if (selectedTires.some((t) => t.material.toLowerCase() === material.toLowerCase())) return true;
-    const sku = await fetchTireSkuByMaterial(material);
-    if (!sku) return false;
-    addTireFromCatalog(sku);
+    const skuQrCode = code.trim();
+    if (!skuQrCode) return false;
+    const tire = await fetchTireBySkuQrCode(skuQrCode);
+    if (!tire) return false;
+    if (selectedTires.some((t) => t.material.toLowerCase() === tire.serialNumber.toLowerCase())) return true;
+    addSelectedTire({
+      material: tire.serialNumber,
+      model: tire.model,
+      brand: tire.brand,
+      plyRatingBottom: tire.plyRatingBottom,
+    });
     return true;
   };
 
@@ -206,6 +210,7 @@ export default function TireInward() {
             description: t.model,
             plyRatingBottom: t.plyRatingBottom || "",
             brand: t.brand || "",
+            skuQrCode: "",
           },
           id,
           now,

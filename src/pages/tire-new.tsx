@@ -13,6 +13,7 @@ export default function TireNew() {
     tireDescriptionBrand: "",
     plyRatingBottom: "",
     brand: "",
+    skuQrCode: "",
   });
   const [suggestions, setSuggestions] = useState<TireSkuRow[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -37,12 +38,13 @@ export default function TireNew() {
   }, [form.material]);
 
   const selectSuggestion = (row: TireSkuRow) => {
-    setForm({
+    setForm((f) => ({
       material: row.material,
       tireDescriptionBrand: row.description,
       plyRatingBottom: row.ply_rating_bottom ?? "",
       brand: row.brand ?? "",
-    });
+      skuQrCode: f.skuQrCode,
+    }));
     setShowSuggestions(false);
   };
 
@@ -71,6 +73,7 @@ export default function TireNew() {
       costPrice: 0,
       plyRatingBottom: form.plyRatingBottom.trim(),
       brand: form.brand.trim(),
+      skuQrCode: form.skuQrCode.trim(),
       createdAt: now,
       updatedAt: now,
     };
@@ -166,6 +169,7 @@ export default function TireNew() {
             required
           />
           <Field label="Brand" value={form.brand} onChange={(v) => update("brand", v)} required />
+          <Field label="SKU QRCode" value={form.skuQrCode} onChange={(v) => update("skuQrCode", v)} />
         </div>
 
         <div className="pt-2">
