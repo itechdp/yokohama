@@ -90,6 +90,38 @@ export async function fetchTireBySkuQrCode(skuQrCode: string): Promise<Tire | nu
   return data ? fromRow(data) : null;
 }
 
+// Bulk uploads can run to hundreds/thousands of rows — a single .in() with
+// that many values risks a URL-length failure (PostgREST filters ride in the
+// query string), so the existence check below is chunked instead of sent as
+// one request.
+const SKU_CHECK_CHUNK_SIZE = 200;
+
+// Which of these SKU QR codes are already in the tires table — used by Bulk
+// upload to skip rows that would otherwise trip the tires_sku_qr_code_unique
+// constraint (re-uploading a file that overlaps a previous upload) instead of
+// failing the whole batch with no indication of which rows collided. Throws
+// if any chunk of the check fails, rather than silently treating everything
+// as new (which previously let real duplicates slip through and fail at
+// insert time anyway, with a much less useful error).
+export async function fetchExistingSkuQrCodes(codes: string[]): Promise<Set<string>> {
+  const unique = Array.from(new Set(codes.filter(Boolean)));
+  if (unique.length === 0) return new Set();
+
+  const found = new Set<string>();
+  for (let i = 0; i < unique.length; i += SKU_CHECK_CHUNK_SIZE) {
+    const chunk = unique.slice(i, i + SKU_CHECK_CHUNK_SIZE);
+    const { data, error } = await supabase.from("tires").select("sku_qr_code").in("sku_qr_code", chunk);
+    if (error) {
+      console.warn("tires sku_qr_code existence check failed:", error.message);
+      throw new Error(error.message);
+    }
+    for (const r of data ?? []) {
+      if (r.sku_qr_code) found.add(r.sku_qr_code as string);
+    }
+  }
+  return found;
+}
+
 // New tire units (Add Tire, Bulk upload).
 export async function insertTires(tires: Tire[]): Promise<{ error: string | null }> {
   if (tires.length === 0) return { error: null };
