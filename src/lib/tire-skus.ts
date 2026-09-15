@@ -105,15 +105,3 @@ export async function upsertTireSkus(rows: CatalogRow[]): Promise<{ error: strin
   }
   return { error: null };
 }
-
-// Removes one SKU from the catalog (Tires list "Delete" action). Only
-// affects tire_skus — existing tire records already produced under this
-// Material are untouched.
-export async function deleteTireSku(id: number): Promise<{ error: string | null }> {
-  const { error } = await supabase.from("tire_skus").delete().eq("id", id);
-  if (error) {
-    console.warn("tire_skus delete failed:", error.message);
-    return { error: error.message };
-  }
-  return { error: null };
-}

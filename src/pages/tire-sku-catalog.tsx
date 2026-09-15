@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { ChevronLeft, ChevronRight, List, Loader2, Plus, Search, Trash2 } from "lucide-react";
-import ConfirmDialog from "@/components/confirm-dialog";
-import { deleteTireSku, fetchTireSkusPage } from "@/lib/tire-skus";
+import { ChevronLeft, ChevronRight, List, Plus, Search } from "lucide-react";
+import { fetchTireSkusPage } from "@/lib/tire-skus";
 import type { TireSkuRow } from "@/lib/supabase";
 
 const PAGE_SIZE = 25;
@@ -13,10 +12,6 @@ export default function TireSkuCatalog() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [reloadToken, setReloadToken] = useState(0);
 
   // Any new search starts back at page 1.
   useEffect(() => {
@@ -33,23 +28,7 @@ export default function TireSkuCatalog() {
       });
     }, 250);
     return () => clearTimeout(timeout);
-  }, [search, page, reloadToken]);
-
-  const pendingDeleteRow = rows.find((r) => r.id === pendingDeleteId) ?? null;
-
-  const handleDeleteConfirm = async () => {
-    if (pendingDeleteId == null) return;
-    setDeletingId(pendingDeleteId);
-    setDeleteError(null);
-    const { error } = await deleteTireSku(pendingDeleteId);
-    setDeletingId(null);
-    setPendingDeleteId(null);
-    if (error) {
-      setDeleteError(`Failed to delete tire: ${error}`);
-      return;
-    }
-    setReloadToken((t) => t + 1);
-  };
+  }, [search, page]);
 
   const pageCount = Math.max(1, Math.ceil(count / PAGE_SIZE));
   const rangeStart = count === 0 ? 0 : page * PAGE_SIZE + 1;
@@ -84,30 +63,17 @@ export default function TireSkuCatalog() {
         />
       </div>
 
-      {deleteError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{deleteError}</div>}
-
       {/* Mobile: stacked cards */}
       <div className="sm:hidden space-y-2">
         {rows.map((row) => (
           <div key={row.id} className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-1.5">
             <div className="flex items-start justify-between gap-2">
               <span className="font-semibold text-foreground">{row.material}</span>
-              <div className="flex shrink-0 items-center gap-2">
-                {row.brand && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                    {row.brand}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setPendingDeleteId(row.id)}
-                  disabled={deletingId === row.id}
-                  aria-label={`Delete ${row.material}`}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger transition-colors disabled:opacity-40"
-                >
-                  {deletingId === row.id ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-                </button>
-              </div>
+              {row.brand && (
+                <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                  {row.brand}
+                </span>
+              )}
             </div>
             <p className="text-sm text-foreground">{row.description}</p>
             {row.ply_rating_bottom && (
@@ -131,7 +97,6 @@ export default function TireSkuCatalog() {
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Tire Description-Brand</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Ply Rating Bottom</th>
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Brand</th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -141,23 +106,11 @@ export default function TireSkuCatalog() {
                 <td className="px-4 py-3 text-foreground">{row.description}</td>
                 <td className="px-4 py-3 text-muted-foreground">{row.ply_rating_bottom || "—"}</td>
                 <td className="px-4 py-3 text-muted-foreground">{row.brand || "—"}</td>
-                <td className="px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => setPendingDeleteId(row.id)}
-                    disabled={deletingId === row.id}
-                    aria-label={`Delete ${row.material}`}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-danger hover:bg-danger-soft transition-colors disabled:opacity-40"
-                  >
-                    {deletingId === row.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-                    Delete
-                  </button>
-                </td>
               </tr>
             ))}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
                   No tires found.
                 </td>
               </tr>
@@ -194,20 +147,6 @@ export default function TireSkuCatalog() {
           </div>
         </div>
       )}
-
-      <ConfirmDialog
-        open={pendingDeleteId != null}
-        title="Delete tire"
-        message={
-          pendingDeleteRow
-            ? `Remove ${pendingDeleteRow.material} (${pendingDeleteRow.description}) from the tire catalog? This can't be undone.`
-            : "Remove this tire from the catalog? This can't be undone."
-        }
-        confirmLabel="Delete"
-        destructive
-        onConfirm={handleDeleteConfirm}
-        onCancel={() => setPendingDeleteId(null)}
-      />
     </div>
   );
 }
