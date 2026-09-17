@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowDownToLine, ArrowLeftRight, QrCode, Search, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, Download, Loader2, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ExchangeLocationModal from "@/components/exchange-location-modal";
 import QrScanner from "@/components/qr-scanner";
@@ -8,11 +8,12 @@ import QtyStepper from "@/components/qty-stepper";
 import SelectMenu from "@/components/select-menu";
 import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
+import TireCatalogSearch from "@/components/tire-catalog-search";
 import { binCounts, firstBin, floorCountAt, locationForBin, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
+import { exportInwardReceiptExcel, type InwardFormOptions, type InwardFormRow } from "@/lib/inward-excel-export";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
 import { insertTireHistory } from "@/lib/tire-history";
-import { fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
 import { fetchTireBySkuQrCode, fetchTires, upsertTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { TireSkuRow } from "@/lib/supabase";
@@ -42,9 +43,17 @@ export default function TireInward() {
 
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
   const [scanningTire, setScanningTire] = useState(false);
+
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  // The Excel export is only for the batch just confirmed — not a full
+  // history dump — so the "Export Excel" button stays disabled until at
+  // least one Inward has actually been confirmed in this session.
+  const [lastInwardExport, setLastInwardExport] = useState<InwardFormOptions | null>(null);
 
   useEffect(() => {
     fetchTires().then(setTires);
@@ -163,6 +172,7 @@ export default function TireInward() {
     if (submitting) return;
     setSubmitting(true);
     setSuccess(null);
+    setConfirmError(null);
     if (selectedTires.length === 0 || !selectedWarehouse) {
       setSubmitting(false);
       return;
@@ -177,7 +187,7 @@ export default function TireInward() {
     }
 
     const now = new Date().toISOString();
-    const assignments: { tireId: string; bin: string; model: string }[] = [];
+    const assignments: { tireId: string; bin: string; model: string; material: string }[] = [];
     const extraTires: Tire[] = [];
 
     // Round-robin across the selected bins so multiple picked bins share the
@@ -198,7 +208,7 @@ export default function TireInward() {
         .map((existing) => existing.id);
 
       for (const tireId of existingIds) {
-        assignments.push({ tireId, bin: nextBin(), model: t.model });
+        assignments.push({ tireId, bin: nextBin(), model: t.model, material: t.material });
       }
 
       const shortfall = t.qty - existingIds.length;
@@ -216,7 +226,7 @@ export default function TireInward() {
           now,
         );
         extraTires.push(tire);
-        assignments.push({ tireId: id, bin: nextBin(), model: t.model });
+        assignments.push({ tireId: id, bin: nextBin(), model: t.model, material: t.material });
       }
     }
 
@@ -240,6 +250,7 @@ export default function TireInward() {
     const { error } = await upsertTires(tiresToSave);
     if (error) {
       setSuccess(null);
+      setConfirmError(`Failed to place tires: ${error}`);
       setSubmitting(false);
       return;
     }
@@ -266,6 +277,35 @@ export default function TireInward() {
     await insertTireHistory(newHistory);
     await insertPlacementLogs(newLogs);
 
+    // Export data is built straight from this confirm's own assignments —
+    // not re-fetched from the database — so the exported sheet always
+    // matches exactly what was just placed. The form doesn't show location
+    // (PALLET NO stays blank — the operator fills it in by hand), so rows
+    // are aggregated by material alone — 5 of the same tire across any
+    // bins becomes one row with Qty 5, not duplicate rows.
+    const receivedTime = new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const grouped = new Map<string, { skuCode: string; qty: number }>();
+    for (const a of assignments) {
+      const existing = grouped.get(a.material);
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        grouped.set(a.material, { skuCode: a.material, qty: 1 });
+      }
+    }
+    const formRows: InwardFormRow[] = Array.from(grouped.values()).map((g) => ({
+      palletNo: "",
+      skuCode: g.skuCode,
+      qty: g.qty,
+      receivedTime,
+      actual: "",
+      putTime: receivedTime,
+      totalTime: "",
+      remarks: "",
+    }));
+    const exportData: InwardFormOptions = { noOfTiresRecv: assignments.length, rows: formRows };
+    setLastInwardExport(exportData);
+
     setTires((prev) => {
       const byId = new Map(prev.map((t) => [t.id, t]));
       for (const t of tiresToSave) byId.set(t.id, t);
@@ -277,6 +317,34 @@ export default function TireInward() {
       `${assignments.length} tire${assignments.length === 1 ? "" : "s"} across ${selectedTires.length} type${selectedTires.length === 1 ? "" : "s"} placed across ${binsArray.length} bin${binsArray.length === 1 ? "" : "s"} in ${selectedWarehouse.label}.`,
     );
     setSubmitting(false);
+
+    // Downloads immediately on confirm — the operator shouldn't have to
+    // click a second button to get the receipt they just generated. The
+    // Export Excel button still works afterwards, for re-downloading.
+    void downloadInwardExcel(exportData);
+  };
+
+  // Shared by the auto-download right after confirm and the manual "Export
+  // Excel" button below — both just hand this whatever form data they have.
+  const downloadInwardExcel = async (data: InwardFormOptions) => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await exportInwardReceiptExcel(data);
+    } catch (err) {
+      console.error("Inward export failed:", err);
+      setExportError("Export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // "Export Excel" — re-downloads the Daily Tire's Receipt & Put Away form
+  // for whatever was just confirmed above (lastInwardExport). Only available
+  // after a confirm in this session — there's nothing to export before that.
+  const handleExport = () => {
+    if (exporting || !lastInwardExport) return;
+    void downloadInwardExcel(lastInwardExport);
   };
 
   return (
@@ -295,6 +363,8 @@ export default function TireInward() {
           Back
         </Link>
       </div>
+
+      {confirmError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{confirmError}</div>}
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-2">
@@ -599,13 +669,30 @@ export default function TireInward() {
         )}
       </div>
 
-      <button
-        onClick={handleConfirm}
-        disabled={selectedTires.length === 0 || submitting}
-        className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      >
-        {submitting ? "Confirming…" : "OK - Confirm inward"}
-      </button>
+      {/* One button, two modes: while there are tires staged it confirms the
+          inward; once confirmed (and nothing new staged since) it turns
+          green and re-downloads the receipt that confirm just produced. */}
+      {selectedTires.length > 0 || !lastInwardExport ? (
+        <button
+          onClick={handleConfirm}
+          disabled={selectedTires.length === 0 || submitting}
+          className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {submitting ? "Confirming…" : "OK - Confirm inward"}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={exporting}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-success px-4 py-3.5 text-base font-semibold text-white hover:bg-success/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {exporting ? <Loader2 className="size-5 animate-spin" /> : <Download className="size-5" />}
+          Export Excel
+        </button>
+      )}
+
+      {exportError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{exportError}</div>}
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
 
@@ -651,77 +738,6 @@ export default function TireInward() {
           onClose={() => setScanningTire(false)}
         />
       )}
-    </div>
-  );
-}
-
-function TireCatalogSearch({
-  alreadySelected,
-  onSelect,
-}: {
-  alreadySelected: string[];
-  onSelect: (sku: TireSkuRow) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<TireSkuRow[]>([]);
-  const requestId = useRef(0);
-
-  // Always shows something: the first page of the catalog when there's no
-  // query, filtered results once the operator types. No focus/blur dance —
-  // the list is a normal part of the page, not a dropdown you have to summon.
-  useEffect(() => {
-    const q = query.trim();
-    const id = ++requestId.current;
-    const timeout = setTimeout(() => {
-      const request = q ? searchTireSkus(q, 20) : fetchTireSkusPage({ page: 0, pageSize: 20 }).then((p) => p.rows);
-      request.then((rows) => {
-        if (requestId.current === id) setResults(rows);
-      });
-    }, 250);
-    return () => clearTimeout(timeout);
-  }, [query]);
-
-  return (
-    <div className="space-y-2">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search tire catalog by material or description"
-          autoComplete="off"
-          className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-      </div>
-      <ul className="max-h-56 overflow-y-auto rounded-xl border border-border divide-y divide-border">
-        {results.length === 0 ? (
-          <li className="px-3 py-4 text-center text-xs text-muted-foreground">No matches.</li>
-        ) : (
-          results.map((sku) => {
-            const isSelected = alreadySelected.includes(sku.material);
-            return (
-              <li key={sku.id}>
-                <button
-                  type="button"
-                  disabled={isSelected}
-                  onClick={() => onSelect(sku)}
-                  className={cn(
-                    "w-full px-3 py-2 text-left text-sm transition-colors",
-                    isSelected ? "cursor-not-allowed opacity-40" : "hover:bg-muted",
-                  )}
-                >
-                  <div className="font-medium text-foreground">{sku.material}</div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {sku.description}
-                    {isSelected ? " — already added" : ""}
-                  </div>
-                </button>
-              </li>
-            );
-          })
-        )}
-      </ul>
     </div>
   );
 }

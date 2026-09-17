@@ -69,10 +69,6 @@ export function locationForBin(warehouse: WarehouseDef, bin: string): string {
   return `${warehouse.label} - Bin ${bin}`;
 }
 
-// Location a tire gets when it's pulled off a bin for outward movement, before
-// the separate Dispatch flow assigns it a driver/destination.
-export const PICKED_LOCATION = "Picked - Awaiting Dispatch";
-
 // The bin code a tire's location string points at, if it's currently sitting in one.
 export function binForLocation(warehouse: WarehouseDef, location: string): string | null {
   const prefix = `${warehouse.label} - Bin `;

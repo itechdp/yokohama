@@ -1,289 +1,288 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowUpFromLine, MapPin, QrCode, Warehouse as WarehouseIcon } from "lucide-react";
+import { ArrowUpFromLine, Download, Loader2, MapPin, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import QrScanner from "@/components/qr-scanner";
-import StandFloorRemovePicker, { type Occupant } from "@/components/stand-floor-remove-picker";
+import QtyStepper from "@/components/qty-stepper";
+import SelectMenu from "@/components/select-menu";
+import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
-import {
-  binForLocation,
-  floorCountAt,
-  locationForBin,
-  occupiedBins,
-  PICKED_LOCATION,
-  standCountAt,
-  type WarehouseDef,
-} from "@/data/warehouse-bins";
-import { insertTireHistory } from "@/lib/tire-history";
-import { fetchTires, upsertTires } from "@/lib/tires";
+import TireCatalogSearch from "@/components/tire-catalog-search";
+import { floorCountAt, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
+import { exportPickSheetExcel, type PickSheetFormOptions, type PickSheetFormRow } from "@/lib/outward-excel-export";
+import { insertOutwardPicks } from "@/lib/outward-picks";
+import { fetchTireBySkuQrCode } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
-import type { StageHistory, Tire } from "@/types/tire";
+import type { TireSkuRow } from "@/lib/supabase";
+import type { OutwardPick } from "@/types/tire";
 
-interface TireGroup {
+// A tire type selected for this pick batch, with its own quantity — mirrors
+// Inward's SelectedTire exactly, right down to the per-tire qty stepper. No
+// tie to any tires-table row; this is purely "what, how many" as reported by
+// the picker, same as Inward reports "what, how many" on arrival.
+interface SelectedTire {
   key: string;
-  model: string;
-  material?: string;
+  material: string;
+  description: string;
   brand?: string;
   plyRatingBottom?: string;
+  qty: number;
+}
+
+// One confirmed pick queued for submission.
+interface PickEntry {
+  key: string;
+  material: string;
+  description: string;
+  brand?: string;
+  plyRatingBottom?: string;
+  warehouseLabel: string;
+  locationLabel: string;
+  qty: number;
 }
 
 export default function TireOutward() {
-  const [tires, setTires] = useState<Tire[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
-  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
+  const [selectedTires, setSelectedTires] = useState<SelectedTire[]>([]);
   const [warehouseKey, setWarehouseKey] = useState("");
-  // How many tires to pick from each location, keyed by location string.
-  // A location can be partially picked (fewer than everything sitting
-  // there) — capped per-location at how many tires actually sit there.
-  const [pickedCounts, setPickedCounts] = useState<Record<string, number>>({});
-  const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
+  const [manualCol, setManualCol] = useState("");
+  const [manualRow, setManualRow] = useState("");
+  const [manualStand, setManualStand] = useState("");
+  const [manualFloor, setManualFloor] = useState("");
+
+  const [pickEntries, setPickEntries] = useState<PickEntry[]>([]);
   const [scanningTire, setScanningTire] = useState(false);
+  const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
 
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  // The Excel export is only for the batch just confirmed — not a full
+  // history dump — so the "Export Excel" button stays disabled until at
+  // least one Outward pick has actually been confirmed in this session.
+  const [lastOutwardExport, setLastOutwardExport] = useState<PickSheetFormOptions | null>(null);
 
   useEffect(() => {
-    fetchTires().then(setTires);
     fetchWarehouses().then((rows) => {
       setWarehouses(rows);
       setWarehouseKey((prev) => prev || rows[0]?.key || "");
     });
   }, []);
 
-  // Only tires actually sitting in a bin right now (not already picked/dispatched).
-  const candidates = useMemo(
-    () => tires.filter((t) => t.currentStage === "warehouse" && warehouses.some((w) => binForLocation(w, t.location))),
-    [tires, warehouses],
-  );
-
-  const groups = useMemo(() => {
-    const map = new Map<string, TireGroup>();
-    for (const t of candidates) {
-      if (map.has(t.model)) continue;
-      map.set(t.model, { key: t.model, model: t.model, material: t.serialNumber, brand: t.brand, plyRatingBottom: t.plyRatingBottom });
-    }
-    return Array.from(map.values()).sort((a, b) => a.model.localeCompare(b.model));
-  }, [candidates]);
-
-  const toggleModel = (model: string) => {
-    setSelectedModels((prev) => {
-      const next = new Set(prev);
-      if (next.has(model)) next.delete(model);
-      else next.add(model);
-      return next;
-    });
-  };
-
-  // How much of the selected model(s) sits in each warehouse — helps pick the right one.
-  const warehouseCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const w of warehouses) counts[w.key] = 0;
-    if (selectedModels.size === 0) return counts;
-    for (const t of candidates) {
-      if (!selectedModels.has(t.model)) continue;
-      const w = warehouses.find((w) => binForLocation(w, t.location));
-      if (w) counts[w.key] = (counts[w.key] || 0) + 1;
-    }
-    return counts;
-  }, [candidates, selectedModels, warehouses]);
-
   const selectedWarehouse = warehouses.find((w) => w.key === warehouseKey) || null;
-  const occupied = useMemo(
-    () => (selectedWarehouse ? occupiedBins(selectedWarehouse, tires) : new Set<string>()),
-    [selectedWarehouse, tires],
+
+  const columnOptions = useMemo(
+    () => (selectedWarehouse ? selectedWarehouse.columnRowCounts.map((_, i) => i + 1) : []),
+    [selectedWarehouse],
   );
+
   const maxRows = selectedWarehouse ? Math.max(...selectedWarehouse.columnRowCounts) : 0;
-
-  // Every occupied bin across every warehouse, with its exact location text
-  // and the models sitting there. This is fully independent of the
-  // warehouse/bin-map above — an operator who already knows the location can
-  // pick it directly here without ever choosing a warehouse or opening the map.
-  const occupiedLocations = useMemo(() => {
-    const list: { location: string; warehouseLabel: string; code: string; models: string[]; count: number }[] = [];
-    for (const w of warehouses) {
-      const occ = occupiedBins(w, tires);
-      for (const code of occ) {
-        const location = locationForBin(w, code);
-        const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
-        if (atBin.length === 0) continue;
-        list.push({ location, warehouseLabel: w.label, code, models: Array.from(new Set(atBin.map((t) => t.model))), count: atBin.length });
-      }
+  const rowOptions = useMemo(() => {
+    if (!selectedWarehouse) return [];
+    if (manualCol) {
+      const max = selectedWarehouse.columnRowCounts[Number(manualCol) - 1] ?? 0;
+      return Array.from({ length: max }, (_, i) => i + 1);
     }
-    return list.sort((a, b) => a.location.localeCompare(b.location));
-  }, [warehouses, tires]);
+    return Array.from({ length: maxRows }, (_, i) => i + 1);
+  }, [selectedWarehouse, manualCol, maxRows]);
 
-  // Only the occupied locations that actually hold a selected tire type —
-  // this card only makes sense once a type is chosen in step 1.
-  const pickableLocations = useMemo(
-    () => occupiedLocations.filter((loc) => loc.models.some((m) => selectedModels.has(m))),
-    [occupiedLocations, selectedModels],
-  );
+  const manualStandCount = selectedWarehouse && manualCol ? standCountAt(selectedWarehouse, Number(manualCol)) : 1;
+  const standOptions = STAND_IDS.slice(0, manualStandCount);
 
-  // Total tires physically sitting at each location — the ceiling a
-  // location's pick quantity can never exceed.
-  const locationTotals = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const loc of occupiedLocations) map.set(loc.location, loc.count);
-    return map;
-  }, [occupiedLocations]);
+  const maxFloors = selectedWarehouse
+    ? Math.max(...selectedWarehouse.columnRowCounts.map((_, i) => floorCountAt(selectedWarehouse, i + 1)))
+    : 0;
+  const manualFloorCount = selectedWarehouse ? (manualCol ? floorCountAt(selectedWarehouse, Number(manualCol)) : maxFloors) : 0;
+  const floorOptions = useMemo(() => Array.from({ length: manualFloorCount }, (_, i) => i + 1), [manualFloorCount]);
 
-  const pickedQtyAt = (location: string) => pickedCounts[location] ?? 0;
+  // The area code (prefix+col-row) the current manual selection points at, if
+  // both Row and Position are picked — used to highlight the matching cell
+  // in the bin map below, and to know which cell's picker to reopen already
+  // showing the current stand/floor selected.
+  const currentAreaCode =
+    selectedWarehouse && manualCol && manualRow
+      ? `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`
+      : null;
+  const currentFullCode =
+    currentAreaCode && manualFloor && (manualStandCount <= 1 || manualStand)
+      ? `${currentAreaCode}-${manualStandCount > 1 ? manualStand : STAND_IDS[0]}${manualFloor}`
+      : null;
 
-  const setLocationQty = (location: string, qty: number) => {
-    const max = locationTotals.get(location) ?? 0;
-    const clamped = Math.max(0, Math.min(qty, max));
-    setPickedCounts((prev) => {
-      if (clamped === 0) {
-        if (!(location in prev)) return prev;
-        const next = { ...prev };
-        delete next[location];
-        return next;
-      }
-      return { ...prev, [location]: clamped };
+  // Picking a stand+floor block on the bin map sets exactly the same
+  // Row/Position/Stand/Floor state the dropdowns above do — the map is just
+  // another way to fill in the same single location.
+  const selectFromBinMap = (areaCode: string, code: string) => {
+    if (!selectedWarehouse) return;
+    const [colStr, rowStr] = areaCode.slice(selectedWarehouse.prefix.length).split("-");
+    const shortCode = code.slice(areaCode.length + 1);
+    const match = /^([A-Za-z]+)(\d+)$/.exec(shortCode);
+    if (!colStr || !rowStr || !match) return;
+    setManualCol(String(Number(colStr)));
+    setManualRow(String(Number(rowStr)));
+    setManualStand(match[1]);
+    setManualFloor(match[2]);
+    setPickerAreaCode(null);
+  };
+
+  const addSelectedTire = (entry: { material: string; description: string; brand?: string; plyRatingBottom?: string }) => {
+    setSelectedTires((prev) => {
+      if (prev.some((t) => t.material === entry.material)) return prev;
+      return [...prev, { key: entry.material, qty: 1, ...entry }];
     });
   };
 
-  // "Scan tire QR" — the code printed on a tire's SKU label encodes its
-  // sku_qr_code, resolving to one exact physical unit. Since we know exactly
-  // which tire that is, this both selects its model and picks it (bumps that
-  // one unit's location by one) — a match here is a precise pick, not just a
-  // type filter like the search list above.
+  const removeSelectedTire = (key: string) => {
+    setSelectedTires((prev) => prev.filter((t) => t.key !== key));
+  };
+
+  const setSelectedTireQty = (key: string, value: number) => {
+    setSelectedTires((prev) => prev.map((t) => (t.key === key ? { ...t, qty: value } : t)));
+  };
+
+  const canAddPick =
+    selectedTires.length > 0 &&
+    !!selectedWarehouse &&
+    !!manualCol &&
+    !!manualRow &&
+    !!manualFloor &&
+    (manualStandCount <= 1 || !!manualStand);
+
+  // One tire selected in step 1 can become several pick entries here — every
+  // selected tire type is recorded against the single location picked in
+  // step 2, each keeping its own quantity.
+  const addPick = () => {
+    if (!canAddPick || !selectedWarehouse) return;
+    const stand = manualStandCount > 1 ? manualStand : STAND_IDS[0];
+    const locationLabel = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}-${stand}${manualFloor}`;
+
+    setPickEntries((prev) => [
+      ...prev,
+      ...selectedTires.map((t) => ({
+        key: `${t.material}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        material: t.material,
+        description: t.description,
+        brand: t.brand,
+        plyRatingBottom: t.plyRatingBottom,
+        warehouseLabel: selectedWarehouse.label,
+        locationLabel,
+        qty: t.qty,
+      })),
+    ]);
+    // Location is kept as-is (the next batch is often from the same spot);
+    // only the tire selection resets, ready for the next one.
+    setSelectedTires([]);
+  };
+
+  const removePick = (key: string) => {
+    setPickEntries((prev) => prev.filter((p) => p.key !== key));
+  };
+
+  const totalQty = pickEntries.reduce((sum, p) => sum + p.qty, 0);
+
+  // "Scan tire QR" — resolves the code printed on a tire's SKU label to its
+  // Material/Model (a read-only lookup against the tires catalog). It only
+  // adds to step 1's selection; the operator still has to type where they
+  // physically found it, since nothing here trusts a previously-recorded
+  // location.
   const handleTireDecode = async (code: string): Promise<boolean> => {
     const skuQrCode = code.trim();
     if (!skuQrCode) return false;
-    const tire = candidates.find((t) => (t.skuQrCode ?? "").toLowerCase() === skuQrCode.toLowerCase());
+    const tire = await fetchTireBySkuQrCode(skuQrCode);
     if (!tire) return false;
-    setSelectedModels((prev) => new Set(prev).add(tire.model));
-    const w = warehouses.find((w) => binForLocation(w, tire.location));
-    if (w) setWarehouseKey(w.key);
-    setLocationQty(tire.location, pickedQtyAt(tire.location) + 1);
+    addSelectedTire({
+      material: tire.serialNumber,
+      description: tire.model,
+      brand: tire.brand,
+      plyRatingBottom: tire.plyRatingBottom,
+    });
     return true;
   };
 
-  // Used by the 3D bin-map picker — a tap there is all-or-nothing (matches
-  // its existing behavior), unlike the quantity stepper on the flat list.
-  const toggleLocation = (location: string) => {
-    setLocationQty(location, pickedQtyAt(location) > 0 ? 0 : (locationTotals.get(location) ?? 0));
-  };
-
-  // Whether an area (any of its occupied slots, including a legacy bare-area
-  // tire) holds a selected model.
-  const areaMatchesSelection = (areaCode: string) => {
-    if (!selectedWarehouse || selectedModels.size === 0) return false;
-    for (const code of occupied) {
-      if (code !== areaCode && !code.startsWith(`${areaCode}-`)) continue;
-      const location = locationForBin(selectedWarehouse, code);
-      // A bin can hold any number of tires of different models, so every
-      // tire at this location has to be checked — not just the first found.
-      const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
-      if (atBin.some((t) => selectedModels.has(t.model))) return true;
-    }
-    return false;
-  };
-
-  const areaHasPick = (areaCode: string) =>
-    Object.keys(pickedCounts).some((location) => {
-      if (!selectedWarehouse || pickedQtyAt(location) <= 0) return false;
-      const code = binForLocation(selectedWarehouse, location);
-      return code === areaCode || code?.startsWith(`${areaCode}-`);
-    });
-
-  // Which tire (if any) sits at each stand+floor slot in the currently open area.
-  const occupantsForArea = (areaCode: string): Record<string, Occupant | undefined> => {
-    if (!selectedWarehouse) return {};
-    const result: Record<string, Occupant | undefined> = {};
-    for (const code of occupied) {
-      if (!code.startsWith(`${areaCode}-`)) continue;
-      const shortCode = code.slice(areaCode.length + 1);
-      const location = locationForBin(selectedWarehouse, code);
-      const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
-      const tire = atBin[0];
-      if (tire)
-        result[shortCode] = {
-          tireId: tire.id,
-          model: tire.model,
-          serialNumber: tire.serialNumber,
-          code,
-          count: atBin.length,
-          models: atBin.map((t) => t.model),
-        };
-    }
-    return result;
-  };
-
-  // The tire sitting directly at the bare area code, if any — pre-existing
-  // stock placed before stand/floor tracking existed.
-  const legacyOccupantForArea = (areaCode: string): Occupant | undefined => {
-    if (!selectedWarehouse || !occupied.has(areaCode)) return undefined;
-    const location = locationForBin(selectedWarehouse, areaCode);
-    const atBin = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
-    const tire = atBin[0];
-    return tire
-      ? { tireId: tire.id, model: tire.model, serialNumber: tire.serialNumber, code: areaCode, count: atBin.length, models: atBin.map((t) => t.model) }
-      : undefined;
-  };
-
-  const pickerSelectedCodes = new Set(
-    selectedWarehouse
-      ? Object.keys(pickedCounts)
-          .filter((location) => pickedQtyAt(location) > 0)
-          .map((location) => binForLocation(selectedWarehouse, location))
-          .filter((code): code is string => code !== null)
-      : [],
-  );
-
-  const togglePickerBin = (code: string) => {
-    if (!selectedWarehouse) return;
-    toggleLocation(locationForBin(selectedWarehouse, code));
-  };
-
-  // A location can be partially picked, so this takes exactly `qty` tire
-  // records from each picked location — not every tire sitting there.
-  const selectedTires = useMemo(() => {
-    const result: Tire[] = [];
-    for (const [location, qty] of Object.entries(pickedCounts)) {
-      if (qty <= 0) continue;
-      const atLocation = tires.filter((t) => t.currentStage === "warehouse" && t.location === location);
-      result.push(...atLocation.slice(0, qty));
-    }
-    return result;
-  }, [pickedCounts, tires]);
-
   const handleConfirm = async () => {
-    if (submitting || selectedTires.length === 0) return;
+    if (submitting || pickEntries.length === 0) return;
     setSubmitting(true);
     setSuccess(null);
+    setConfirmError(null);
 
     const now = new Date().toISOString();
-    const updatedTires = selectedTires.map((t) => ({ ...t, location: PICKED_LOCATION, updatedAt: now }));
+    const rows: OutwardPick[] = pickEntries.map((p, idx) => ({
+      id: `op-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+      material: p.material,
+      description: p.description,
+      warehouse: p.warehouseLabel,
+      location: p.locationLabel,
+      quantity: p.qty,
+      pickedAt: now,
+      pickedBy: "Forklift operator",
+      notes: "",
+    }));
 
-    const { error } = await upsertTires(updatedTires);
+    const { error } = await insertOutwardPicks(rows);
+    setSubmitting(false);
     if (error) {
-      setSubmitting(false);
+      setConfirmError(`Failed to record outward pick: ${error}`);
       return;
     }
 
-    const newHistory: StageHistory[] = selectedTires.map((t, idx) => ({
-      id: `h-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
-      tireId: t.id,
-      stage: "warehouse",
-      location: PICKED_LOCATION,
-      movedAt: now,
-      movedBy: "Forklift operator",
-      notes: `Outward: ${t.model} picked from ${t.location}`,
+    // Export data is built straight from this confirm's own pick entries —
+    // not re-fetched from the database — so the exported sheet always
+    // matches exactly what was just picked. Multiple pick entries for the
+    // same tire at the same location (e.g. added in two separate "Add pick"
+    // taps) are aggregated first — one row with the combined Qty, not
+    // duplicate rows.
+    const grouped = new Map<string, { skuCode: string; location: string; qty: number }>();
+    for (const p of pickEntries) {
+      const key = `${p.material}|${p.warehouseLabel}|${p.locationLabel}`;
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.qty += p.qty;
+      } else {
+        grouped.set(key, { skuCode: p.material, location: `${p.warehouseLabel} - Bin ${p.locationLabel}`, qty: p.qty });
+      }
+    }
+    const formRows: PickSheetFormRow[] = Array.from(grouped.values()).map((g) => ({
+      palletNo: "",
+      skuCode: g.skuCode,
+      qty: g.qty,
+      location: g.location,
+      remarks: "",
     }));
+    const exportData: PickSheetFormOptions = { noOfTires: totalQty, rows: formRows };
+    setLastOutwardExport(exportData);
 
-    await insertTireHistory(newHistory);
+    setPickEntries([]);
+    setSuccess(`${totalQty} tire${totalQty === 1 ? "" : "s"} across ${pickEntries.length} pick${pickEntries.length === 1 ? "" : "s"} recorded.`);
 
-    setTires((prev) => {
-      const byId = new Map(prev.map((t) => [t.id, t]));
-      for (const t of updatedTires) byId.set(t.id, t);
-      return Array.from(byId.values());
-    });
-    setPickedCounts({});
-    setSuccess(`${selectedTires.length} tire${selectedTires.length === 1 ? "" : "s"} picked, ready for dispatch.`);
-    setSubmitting(false);
+    // Downloads immediately on confirm — the operator shouldn't have to
+    // click a second button to get the sheet they just generated. The
+    // Export Excel button still works afterwards, for re-downloading.
+    void downloadPickSheetExcel(exportData);
+  };
+
+  // Shared by the auto-download right after confirm and the manual "Export
+  // Excel" button below — both just hand this whatever form data they have.
+  const downloadPickSheetExcel = async (data: PickSheetFormOptions) => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await exportPickSheetExcel(data);
+    } catch (err) {
+      console.error("Outward export failed:", err);
+      setExportError("Export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // "Export Excel" — re-downloads the PICK SHEET form for whatever was just
+  // confirmed above (lastOutwardExport). Only available after a confirm in
+  // this session — there's nothing to export before that.
+  const handleExport = () => {
+    if (exporting || !lastOutwardExport) return;
+    void downloadPickSheetExcel(lastOutwardExport);
   };
 
   return (
@@ -303,9 +302,11 @@ export default function TireOutward() {
         </Link>
       </div>
 
+      {confirmError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{confirmError}</div>}
+
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-medium text-foreground">1. Select tires</h2>
+          <h2 className="text-base font-medium text-foreground">1. Tire</h2>
           <button
             type="button"
             onClick={() => setScanningTire(true)}
@@ -316,119 +317,52 @@ export default function TireOutward() {
             <QrCode className="size-4" />
           </button>
         </div>
-        {groups.length === 0 ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">No tires currently in the warehouse.</div>
-        ) : (
-          <ul className="space-y-2 max-h-72 overflow-y-auto">
-            {groups.map((g) => {
-              const isSelected = selectedModels.has(g.model);
-              return (
-                <li
-                  key={g.key}
-                  onClick={() => toggleModel(g.model)}
-                  className={cn(
-                    "flex items-center gap-3 rounded-xl border px-4 py-3 text-sm transition-colors cursor-pointer",
-                    isSelected ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-muted",
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    readOnly
-                    className="size-5 rounded border-border text-primary focus:ring-ring pointer-events-none"
-                  />
-                  <div>
-                    <p className="font-medium text-foreground">{g.model}</p>
-                    <p className="text-xs text-muted-foreground">{[g.material, g.brand, g.plyRatingBottom].filter(Boolean).join(" · ")}</p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
 
-      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
-            <MapPin className="size-4 text-muted-foreground" />
-            2. Pick locations to remove
-          </h2>
-          {pickableLocations.length > 0 && (
-            <button
-              type="button"
-              onClick={() =>
-                setPickedCounts((prev) => {
-                  const allFull = pickableLocations.every((l) => (prev[l.location] ?? 0) >= l.count);
-                  if (allFull) return {};
-                  const next: Record<string, number> = {};
-                  for (const l of pickableLocations) next[l.location] = l.count;
-                  return next;
-                })
-              }
-              className="shrink-0 text-xs font-medium text-primary hover:underline"
-            >
-              {pickableLocations.every((l) => (pickedCounts[l.location] ?? 0) >= l.count) ? "Clear all" : "Select all"}
-            </button>
-          )}
-        </div>
-        {selectedModels.size === 0 ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">Select a tire type above to see its locations.</div>
-        ) : pickableLocations.length === 0 ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">No locations found for the selected tire type.</div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-96 overflow-y-auto pr-1">
-            {pickableLocations.map((loc) => {
-              const qty = pickedQtyAt(loc.location);
-              const isPicked = qty > 0;
-              return (
-                <div
-                  key={loc.location}
-                  title={loc.location}
-                  className={cn(
-                    "rounded-xl border-2 px-3 py-2 text-xs transition-colors",
-                    isPicked ? "border-success bg-success/10" : "border-border bg-muted/40",
-                  )}
-                >
-                  <p className="font-semibold text-foreground truncate">
-                    {warehouses.length > 1 ? `${loc.warehouseLabel} · ${loc.code}` : loc.code}
-                  </p>
-                  <div className="mt-1.5 flex items-center justify-between gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setLocationQty(loc.location, qty - 1)}
-                      disabled={qty <= 0}
-                      aria-label={`Pick one fewer tire from ${loc.code}`}
-                      className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-card text-sm font-bold text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      −
-                    </button>
-                    <span className="font-medium text-foreground">
-                      {qty}/{loc.count}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setLocationQty(loc.location, qty + 1)}
-                      disabled={qty >= loc.count}
-                      aria-label={`Pick one more tire from ${loc.code}`}
-                      className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-card text-sm font-bold text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      +
-                    </button>
+        <TireCatalogSearch
+          alreadySelected={selectedTires.map((t) => t.material)}
+          onSelect={(sku: TireSkuRow) =>
+            addSelectedTire({
+              material: sku.material,
+              description: sku.description,
+              brand: sku.brand ?? undefined,
+              plyRatingBottom: sku.ply_rating_bottom ?? undefined,
+            })
+          }
+        />
+
+        {selectedTires.length > 0 && (
+          <ul className="space-y-2 max-h-96 overflow-y-auto">
+            {selectedTires.map((t) => (
+              <li key={t.key} className="rounded-xl border border-border bg-card px-4 py-3 text-sm space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground truncate">{t.description}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {[t.material, t.brand, t.plyRatingBottom].filter(Boolean).join(" · ")}
+                    </p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => removeSelectedTire(t.key)}
+                    className="shrink-0 text-muted-foreground hover:text-danger"
+                    aria-label={`Remove ${t.description}`}
+                  >
+                    <X className="size-4" />
+                  </button>
                 </div>
-              );
-            })}
-          </div>
+                <QtyStepper value={t.qty} onChange={(v) => setSelectedTireQty(t.key, v)} />
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
           <WarehouseIcon className="size-4 text-muted-foreground" />
-          3. Warehouse
+          2. Picked from
         </h2>
-        {warehouses.length === 0 && (
+        {warehouses.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No warehouses set up yet — add one on the{" "}
             <Link to="/warehouses" className="underline">
@@ -436,122 +370,230 @@ export default function TireOutward() {
             </Link>{" "}
             page.
           </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {warehouses.map((w) => (
+              <button
+                key={w.key}
+                type="button"
+                onClick={() => {
+                  setWarehouseKey(w.key);
+                  setManualCol("");
+                  setManualRow("");
+                  setManualStand("");
+                  setManualFloor("");
+                }}
+                className={cn(
+                  "rounded-xl border px-4 py-3 text-sm font-medium transition-colors",
+                  warehouseKey === w.key
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-card text-foreground hover:bg-muted",
+                )}
+              >
+                {w.label}
+              </button>
+            ))}
+          </div>
         )}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {warehouses.map((w) => (
-            <button
-              key={w.key}
-              type="button"
-              onClick={() => {
-                setWarehouseKey(w.key);
-                setPickedCounts({});
-              }}
-              className={cn(
-                "relative rounded-xl border px-4 py-3 text-sm font-medium transition-colors",
-                warehouseKey === w.key
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-card text-foreground hover:bg-muted",
-              )}
-            >
-              {w.label}
-              {selectedModels.size > 0 && warehouseCounts[w.key] > 0 && (
-                <span
-                  className={cn(
-                    "ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                    warehouseKey === w.key ? "bg-primary-foreground/20" : "bg-danger/10 text-danger",
-                  )}
-                >
-                  {warehouseCounts[w.key]} here
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+
+        {selectedWarehouse && (
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium text-foreground">Select Row</span>
+              <SelectMenu
+                value={manualCol}
+                placeholder="Select row"
+                options={columnOptions.map((c) => ({ value: String(c), label: String(c).padStart(2, "0") }))}
+                onChange={(col) => {
+                  setManualCol(col);
+                  setManualStand("");
+                  if (col && manualRow) {
+                    const max = selectedWarehouse.columnRowCounts[Number(col) - 1] ?? 0;
+                    if (Number(manualRow) > max) setManualRow("");
+                  }
+                  if (col && manualFloor && Number(manualFloor) > floorCountAt(selectedWarehouse, Number(col))) {
+                    setManualFloor("");
+                  }
+                }}
+              />
+            </label>
+
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium text-foreground">Select Position</span>
+              <SelectMenu
+                value={manualRow}
+                placeholder="Select position"
+                options={rowOptions.map((r) => ({ value: String(r), label: String(r) }))}
+                onChange={setManualRow}
+              />
+            </label>
+
+            {manualStandCount > 1 && (
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-foreground">Select Stand</span>
+                <SelectMenu
+                  value={manualStand}
+                  placeholder="Select stand"
+                  options={standOptions.map((s) => ({ value: s, label: s }))}
+                  onChange={setManualStand}
+                />
+              </label>
+            )}
+
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium text-foreground">Select Floor</span>
+              <SelectMenu
+                value={manualFloor}
+                placeholder="Select floor"
+                options={floorOptions.map((f) => ({ value: String(f), label: `Floor ${f}` }))}
+                onChange={setManualFloor}
+              />
+            </label>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={addPick}
+          disabled={!canAddPick}
+          className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {selectedTires.length > 1 ? `Add ${selectedTires.length} picks` : "Add pick"}
+        </button>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">Warehouse bin map</h2>
+        <h2 className="text-base font-medium text-foreground">3. Storage bins</h2>
         {!selectedWarehouse ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">Choose a warehouse first.</div>
-        ) : selectedModels.size === 0 ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">Select a tire type above to see its locations.</div>
+          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
+            Choose a warehouse first.
+          </div>
+        ) : (
+          <div className="overflow-auto max-h-96 rounded-xl border border-border">
+            <table className="border-collapse text-xs">
+              <thead className="sticky top-0 z-10 bg-card">
+                <tr>
+                  <th className="sticky left-0 z-20 w-8 bg-card" />
+                  {selectedWarehouse.columnRowCounts.map((_, colIdx) => (
+                    <th key={colIdx} className="px-1 py-1 text-center font-medium text-muted-foreground">
+                      {String(colIdx + 1).padStart(2, "0")}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: maxRows }, (_, rowIdx) => {
+                  const row = rowIdx + 1;
+                  return (
+                    <tr key={row}>
+                      <td className="sticky left-0 z-10 bg-card px-1 py-1 text-center text-muted-foreground">
+                        {row}
+                      </td>
+                      {selectedWarehouse.columnRowCounts.map((maxRow, colIdx) => {
+                        if (row > maxRow) return <td key={colIdx} />;
+                        const col = colIdx + 1;
+                        const code = `${selectedWarehouse.prefix}${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`;
+                        const hasPick = currentAreaCode === code;
+                        return (
+                          <td key={colIdx} className="p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setPickerAreaCode(code)}
+                              title={code}
+                              className={cn(
+                                "flex h-8 w-12 items-center justify-center rounded text-[9px] font-bold leading-none text-white transition-colors",
+                                !hasPick && "bg-info/70 hover:bg-info",
+                                hasPick && "bg-success ring-2 ring-success ring-offset-1",
+                              )}
+                            >
+                              {String(col).padStart(2, "0")}-{String(row).padStart(2, "0")}
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
+        <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
+          <MapPin className="size-4 text-muted-foreground" />
+          4. Picks to record
+        </h2>
+        {pickEntries.length === 0 ? (
+          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
+            No picks added yet — select a tire and location above, then "Add pick".
+          </div>
         ) : (
           <>
-            <div className="overflow-auto max-h-96 rounded-xl border border-border">
-              <table className="border-collapse text-xs">
-                <thead className="sticky top-0 z-10 bg-card">
-                  <tr>
-                    <th className="sticky left-0 z-20 w-8 bg-card" />
-                    {selectedWarehouse.columnRowCounts.map((_, colIdx) => (
-                      <th key={colIdx} className="px-1 py-1 text-center font-medium text-muted-foreground">
-                        {String(colIdx + 1).padStart(2, "0")}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: maxRows }, (_, rowIdx) => {
-                    const row = rowIdx + 1;
-                    return (
-                      <tr key={row}>
-                        <td className="sticky left-0 z-10 bg-card px-1 py-1 text-center text-muted-foreground">{row}</td>
-                        {selectedWarehouse.columnRowCounts.map((maxRow, colIdx) => {
-                          if (row > maxRow) return <td key={colIdx} />;
-                          const col = colIdx + 1;
-                          const code = `${selectedWarehouse.prefix}${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`;
-                          const isMatch = areaMatchesSelection(code);
-                          const hasPick = areaHasPick(code);
-                          const isRelevant = isMatch || hasPick;
-                          return (
-                            <td key={colIdx} className="p-0.5">
-                              <button
-                                type="button"
-                                disabled={!isRelevant}
-                                onClick={() => setPickerAreaCode(code)}
-                                title={isRelevant ? code : `${code} — empty`}
-                                className={cn(
-                                  "flex h-8 w-12 items-center justify-center rounded text-[9px] font-bold leading-none text-white transition-colors",
-                                  !isRelevant && "bg-muted text-muted-foreground/40 cursor-not-allowed",
-                                  isRelevant && !hasPick && "bg-info/70 hover:bg-info",
-                                  hasPick && "bg-success ring-2 ring-success ring-offset-1 hover:bg-success",
-                                )}
-                              >
-                                {String(col).padStart(2, "0")}-{String(row).padStart(2, "0")}
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <ul className="space-y-2 max-h-72 overflow-y-auto">
+              {pickEntries.map((p) => (
+                <li key={p.key} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground truncate">{p.description}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {p.material} · {p.warehouseLabel} · {p.locationLabel} · Qty {p.qty}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removePick(p.key)}
+                    className="shrink-0 text-muted-foreground hover:text-danger"
+                    aria-label={`Remove pick of ${p.description}`}
+                  >
+                    <X className="size-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted-foreground">
+              {totalQty} tire{totalQty === 1 ? "" : "s"} across {pickEntries.length} pick{pickEntries.length === 1 ? "" : "s"}
+            </p>
           </>
         )}
       </div>
 
-      <button
-        onClick={handleConfirm}
-        disabled={selectedTires.length === 0 || submitting}
-        className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      >
-        {submitting ? "Confirming…" : "OK - Confirm outward"}
-      </button>
+      {/* One button, two modes: while there are picks staged it confirms the
+          outward; once confirmed (and nothing new staged since) it turns
+          green and re-downloads the pick sheet that confirm just produced. */}
+      {pickEntries.length > 0 || !lastOutwardExport ? (
+        <button
+          onClick={handleConfirm}
+          disabled={pickEntries.length === 0 || submitting}
+          className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {submitting ? "Confirming…" : "OK - Confirm outward"}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={exporting}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-success px-4 py-3.5 text-base font-semibold text-white hover:bg-success/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {exporting ? <Loader2 className="size-5 animate-spin" /> : <Download className="size-5" />}
+          Export Excel
+        </button>
+      )}
+
+      {exportError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{exportError}</div>}
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
 
       {pickerAreaCode && selectedWarehouse && (
-        <StandFloorRemovePicker
+        <StandFloorPicker
           areaCode={pickerAreaCode}
           standCount={standCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
           floorCount={floorCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
-          occupants={occupantsForArea(pickerAreaCode)}
-          legacyOccupant={legacyOccupantForArea(pickerAreaCode)}
-          selectedCodes={pickerSelectedCodes}
-          selectedModels={selectedModels}
-          onToggle={togglePickerBin}
-          onDone={() => setPickerAreaCode(null)}
+          slotCounts={{}}
+          selectedCode={currentAreaCode === pickerAreaCode ? currentFullCode : null}
+          onSelect={(code) => selectFromBinMap(pickerAreaCode, code)}
+          onClose={() => setPickerAreaCode(null)}
         />
       )}
 

@@ -58,6 +58,23 @@ export interface PlacementLog {
   notes: string;
 }
 
+// One Outward pick record: a worker reporting "I took N of this tire from
+// this location" — standalone, not tied to any tires-table row or stage
+// transition. Unlike the old Outward flow (which only worked because Inward
+// had already recorded a bin), this is the entire source of truth for where
+// a tire was picked from.
+export interface OutwardPick {
+  id: string;
+  material: string;
+  description: string;
+  warehouse: string;
+  location: string;
+  quantity: number;
+  pickedAt: string;
+  pickedBy: string;
+  notes: string;
+}
+
 export interface TireDispatch {
   id: string;
   tireId: string;

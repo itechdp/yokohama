@@ -25,6 +25,7 @@ export const FEATURE_ITEMS: NavItem[] = [
   { to: "/tires/stock", label: "Stock", icon: PackageSearch },
   { to: "/tires/skus", label: "Show tire", icon: List },
   { to: "/tires/dispatch", label: "Dispatch", icon: Truck },
+  { to: "/tires/history", label: "History", icon: History },
   { to: "/bays", label: "Loading Bay", icon: LayoutGrid },
   { to: "/bays/history", label: "Bay History", icon: History },
   { to: "/warehouses", label: "Warehouses", icon: Warehouse },
