@@ -1,11 +1,12 @@
 /**
  * PICK SHEET - Excel export
  *
- * Recreates the paper "PICK SHEET" reference form as an A4-landscape Excel
- * workbook using ExcelJS, trimmed down to only the fields marked as kept on
- * the reference form: Picker Name, Plant, Date, Shift, and a SI.NO / PALLET
- * NO / SKU CODE / QTY / LOCATION table (no Operator Name, No.of Pallet, No
- * of Tires, Sheet No, Plan No, Remark column, or footer sign-off block).
+ * A4-landscape Excel workbook using ExcelJS. Header is one row per field —
+ * Plan No, Picker Name, Date, Time, each its own label+value row (Plan
+ * No/Date/Time auto-filled from live data, Picker Name from the Picker Name
+ * input). Table: S NO / Pallet No / SKU Code / Qty / Warehouse Name /
+ * Location / Real Time -Auto. SKU Code shows the Material and its tire
+ * description together, one below the other in the same cell.
  *
  * The main table is populated from whatever Outward pick was just
  * confirmed — see tire-outward.tsx.
@@ -22,12 +23,13 @@ export interface PickSheetFormRow {
   palletNo: string;
   skuCode: string;
   qty: number | string;
+  warehouse: string;
   location: string;
-  remarks?: string;
+  time: string;
 }
 
 export interface PickSheetFormOptions {
-  noOfTires: number;
+  pickerName: string;
   rows: PickSheetFormRow[];
 }
 
@@ -130,23 +132,24 @@ function safeFilenamePart(value: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Column indices (A=1...E=5) — one real grid column per table column, no
-// extra filler columns (the Remark column/footer sign-off block from the
-// reference form were dropped, so there's nothing to pad out to).
+// Column indices (A=1...G=7) — one real grid column per table column, no
+// extra filler columns.
 // ---------------------------------------------------------------------------
 const COL_SLNO = 1;
 const COL_PALLET = 2;
 const COL_SKU = 3;
 const COL_QTY = 4;
-const COL_LOCATION = 5;
-const LAST_COL = 5;
+const COL_WAREHOUSE = 5;
+const COL_LOCATION = 6;
+const COL_REALTIME = 7;
+const LAST_COL = 7;
 
 // ---------------------------------------------------------------------------
 // Main export function
 // ---------------------------------------------------------------------------
 
 export async function exportPickSheetExcel(opts: PickSheetFormOptions, planNo?: string): Promise<void> {
-  const { rows } = opts;
+  const { rows, pickerName } = opts;
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Yokohama WMS";
@@ -184,10 +187,12 @@ export async function exportPickSheetExcel(opts: PickSheetFormOptions, planNo?: 
 
   // Column widths
   ws.getColumn(COL_SLNO).width = 8;
-  ws.getColumn(COL_PALLET).width = 17;
+  ws.getColumn(COL_PALLET).width = 14;
   ws.getColumn(COL_SKU).width = 34;
   ws.getColumn(COL_QTY).width = 10;
-  ws.getColumn(COL_LOCATION).width = 30;
+  ws.getColumn(COL_WAREHOUSE).width = 18;
+  ws.getColumn(COL_LOCATION).width = 22;
+  ws.getColumn(COL_REALTIME).width = 16;
 
   // Row heights
   ws.getRow(1).height = 22;
@@ -212,29 +217,34 @@ export async function exportPickSheetExcel(opts: PickSheetFormOptions, planNo?: 
     },
   });
 
-  // ROW 2 - PICKER NAME
-  mergeRange(ws, 2, 1, 2, 2, { value: "PICKER NAME :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 2, 3, 2, LAST_COL, { value: "", vAlign: "middle" });
+  // ROW 2 - PLAN NO (auto-filled from the plan the operator picked)
+  mergeRange(ws, 2, 1, 2, 2, { value: "PLAN NO :", bold: true, vAlign: "middle" });
+  mergeRange(ws, 2, 3, 2, LAST_COL, { value: planNo ?? "", vAlign: "middle" });
 
-  // ROW 3 - PLANT
-  mergeRange(ws, 3, 1, 3, 2, { value: "PLANT :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 3, 3, 3, LAST_COL, { value: "", vAlign: "middle" });
+  // ROW 3 - PICKER NAME (auto-filled from the Picker Name input)
+  mergeRange(ws, 3, 1, 3, 2, { value: "PICKER NAME :", bold: true, vAlign: "middle" });
+  mergeRange(ws, 3, 3, 3, LAST_COL, { value: pickerName, vAlign: "middle" });
 
-  // ROW 4 - DATE
+  // ROW 4 - DATE (auto-filled with today's date)
   mergeRange(ws, 4, 1, 4, 2, { value: "DATE :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 4, 3, 4, LAST_COL, { value: "", vAlign: "middle" });
+  mergeRange(ws, 4, 3, 4, LAST_COL, { value: new Date().toLocaleDateString("en-GB"), vAlign: "middle" });
 
-  // ROW 5 - SHIFT
-  mergeRange(ws, 5, 1, 5, 2, { value: "SHIFT :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 5, 3, 5, LAST_COL, { value: "", vAlign: "middle" });
+  // ROW 5 - TIME (auto-filled with the time this sheet was generated)
+  mergeRange(ws, 5, 1, 5, 2, { value: "TIME :", bold: true, vAlign: "middle" });
+  mergeRange(ws, 5, 3, 5, LAST_COL, {
+    value: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    vAlign: "middle",
+  });
 
   // ROW 6 - Table column headers
   const headers = [
-    { label: "SI.NO", startCol: COL_SLNO, endCol: COL_SLNO },
-    { label: "PALLET NO", startCol: COL_PALLET, endCol: COL_PALLET },
-    { label: "SKU CODE", startCol: COL_SKU, endCol: COL_SKU },
-    { label: "QTY", startCol: COL_QTY, endCol: COL_QTY },
-    { label: "LOCATION", startCol: COL_LOCATION, endCol: COL_LOCATION },
+    { label: "S NO", startCol: COL_SLNO, endCol: COL_SLNO },
+    { label: "Pallet No", startCol: COL_PALLET, endCol: COL_PALLET },
+    { label: "SKU Code", startCol: COL_SKU, endCol: COL_SKU },
+    { label: "Qty", startCol: COL_QTY, endCol: COL_QTY },
+    { label: "Warehouse Name", startCol: COL_WAREHOUSE, endCol: COL_WAREHOUSE },
+    { label: "Location", startCol: COL_LOCATION, endCol: COL_LOCATION },
+    { label: "Real Time -Auto", startCol: COL_REALTIME, endCol: COL_REALTIME },
   ];
 
   for (const h of headers) {
@@ -253,19 +263,23 @@ export async function exportPickSheetExcel(opts: PickSheetFormOptions, planNo?: 
 
   for (let i = 0; i < DATA_ROWS; i++) {
     const excelRow = 7 + i;
-    ws.getRow(excelRow).height = 20;
+    // Taller than a single-line row — SKU Code carries the tire description
+    // as a second line in the same cell, so it needs the extra height.
+    ws.getRow(excelRow).height = 30;
 
     const d = rows[i];
 
     singleCell(ws, excelRow, COL_SLNO, i + 1, { hAlign: "center", vAlign: "middle" });
     singleCell(ws, excelRow, COL_PALLET, d?.palletNo ?? "", { vAlign: "middle" });
-    singleCell(ws, excelRow, COL_SKU, d?.skuCode ?? "", { vAlign: "middle" });
+    singleCell(ws, excelRow, COL_SKU, d?.skuCode ?? "", { vAlign: "middle", wrapText: true });
     singleCell(ws, excelRow, COL_QTY, d?.qty ?? "", { hAlign: "center", vAlign: "middle" });
+    singleCell(ws, excelRow, COL_WAREHOUSE, d?.warehouse ?? "", { vAlign: "middle" });
     singleCell(ws, excelRow, COL_LOCATION, d?.location ?? "", { vAlign: "middle" });
+    singleCell(ws, excelRow, COL_REALTIME, d?.time ?? "", { hAlign: "center", vAlign: "middle" });
   }
 
   // Print area
-  ws.pageSetup.printArea = `A1:E${6 + DATA_ROWS}`;
+  ws.pageSetup.printArea = `A1:G${6 + DATA_ROWS}`;
 
   const planTag = planNo ? `${safeFilenamePart(planNo)}-` : "";
   await downloadWorkbook(wb, `pick-sheet-${planTag}${new Date().toISOString().slice(0, 10)}.xlsx`);

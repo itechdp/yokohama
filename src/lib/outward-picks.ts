@@ -10,6 +10,9 @@ interface OutwardPickRow {
   location: string;
   quantity: number;
   plan_no: string;
+  pallet_no: string;
+  shift: string;
+  picker_name: string;
   picked_at: string;
   picked_by: string;
   notes: string;
@@ -24,6 +27,9 @@ function toRow(p: OutwardPick) {
     location: p.location,
     quantity: p.quantity,
     plan_no: p.planNo,
+    pallet_no: p.palletNo,
+    shift: p.shift,
+    picker_name: p.pickerName,
     picked_at: p.pickedAt,
     picked_by: p.pickedBy,
     notes: p.notes,
@@ -39,6 +45,9 @@ function fromRow(row: OutwardPickRow): OutwardPick {
     location: row.location,
     quantity: row.quantity,
     planNo: row.plan_no,
+    palletNo: row.pallet_no,
+    shift: row.shift,
+    pickerName: row.picker_name,
     pickedAt: row.picked_at,
     pickedBy: row.picked_by,
     notes: row.notes,

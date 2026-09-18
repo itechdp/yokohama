@@ -10,6 +10,9 @@ interface InwardReceiptRow {
   location: string;
   quantity: number;
   plan_no: string;
+  pallet_no: string;
+  shift: string;
+  picker_name: string;
   received_at: string;
   received_by: string;
   notes: string;
@@ -24,6 +27,9 @@ function toRow(r: InwardReceipt) {
     location: r.location,
     quantity: r.quantity,
     plan_no: r.planNo,
+    pallet_no: r.palletNo,
+    shift: r.shift,
+    picker_name: r.pickerName,
     received_at: r.receivedAt,
     received_by: r.receivedBy,
     notes: r.notes,
@@ -39,6 +45,9 @@ function fromRow(row: InwardReceiptRow): InwardReceipt {
     location: row.location,
     quantity: row.quantity,
     planNo: row.plan_no,
+    palletNo: row.pallet_no,
+    shift: row.shift,
+    pickerName: row.picker_name,
     receivedAt: row.received_at,
     receivedBy: row.received_by,
     notes: row.notes,

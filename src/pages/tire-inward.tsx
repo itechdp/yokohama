@@ -14,6 +14,7 @@ import { binCounts, firstBin, floorCountAt, locationForBin, STAND_IDS, standCoun
 import { exportInwardReceiptExcel, type InwardFormRow } from "@/lib/inward-excel-export";
 import { fetchTodayInwardReceiptsForPlan, insertInwardReceipts } from "@/lib/inward-receipts";
 import { insertPlacementLogs } from "@/lib/placement-logs";
+import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
 import { touchPlanNumber } from "@/lib/plan-numbers";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
 import { insertTireHistory } from "@/lib/tire-history";
@@ -31,17 +32,28 @@ interface SelectedTire {
   qty: number;
 }
 
+const SHIFT_OPTIONS = [
+  { value: "1", label: "Shift 1" },
+  { value: "2", label: "Shift 2" },
+  { value: "3", label: "Shift 3" },
+];
+
 export default function TireInward() {
   const [tires, setTires] = useState<Tire[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
-  // Groups every Inward confirmed today under one Plan No. Not persisted
-  // anywhere client-side — only the DB (plan_numbers, touched on confirm)
-  // knows which plan nos exist; this is just which one is currently picked
-  // on screen, starting blank on every page load.
-  const [planNo, setPlanNo] = useState("");
+  // Groups every Inward confirmed today under one Plan No. Which plan
+  // numbers *exist* is entirely DB-backed (plan_numbers, touched on
+  // confirm); this is just which one is currently on screen, remembered
+  // per device (plan-no-draft.ts) so it stays put across page visits until
+  // the operator actually clears/changes it — not reset to blank each time.
+  const [planNo, setPlanNo] = useState(() => getStoredPlanNo("inward"));
+  const [pickerName, setPickerName] = useState("");
+  const [palletNo, setPalletNo] = useState("");
+  const [shift, setShift] = useState("");
   const handlePlanNoChange = (value: string) => {
     setPlanNo(value);
+    setStoredPlanNo("inward", value);
     // Switching plan no re-locks the Export button — it only unlocks again
     // once something's actually confirmed under whichever plan is now selected.
     setConfirmedThisSession(false);
@@ -188,8 +200,8 @@ export default function TireInward() {
     setSubmitting(true);
     setSuccess(null);
     setConfirmError(null);
-    if (!planNo.trim()) {
-      setConfirmError("Select or add a plan no before confirming.");
+    if (!planNo.trim() || !palletNo.trim() || !shift) {
+      setConfirmError("Fill in plan no, pallet no and shift before confirming.");
       setSubmitting(false);
       return;
     }
@@ -322,6 +334,9 @@ export default function TireInward() {
       location: g.location,
       quantity: g.qty,
       planNo: planNo.trim(),
+      palletNo: palletNo.trim(),
+      shift,
+      pickerName: pickerName.trim(),
       receivedAt: now,
       receivedBy: "Forklift operator",
       notes: "",
@@ -362,8 +377,8 @@ export default function TireInward() {
       const rows: InwardFormRow[] = receipts.map((r) => {
         const time = new Date(r.receivedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         return {
-          palletNo: "",
-          skuCode: r.material,
+          palletNo: r.palletNo,
+          skuCode: r.description ? `${r.material}\n${r.description}` : r.material,
           qty: r.quantity,
           location: r.location,
           receivedTime: time,
@@ -374,7 +389,17 @@ export default function TireInward() {
         };
       });
       const noOfTiresRecv = receipts.reduce((sum, r) => sum + r.quantity, 0);
-      await exportInwardReceiptExcel({ noOfTiresRecv, rows }, planNoToExport);
+      // Header Shift/Picker Name reflect the most recently confirmed receipt
+      // under this plan no (receipts are oldest-first) — a plan is expected
+      // to stay on one shift/picker, but if it ever spans more than one, the
+      // latest wins.
+      const latest = receipts[receipts.length - 1];
+      const shiftForHeader = latest?.shift ?? shift;
+      const pickerNameForHeader = latest?.pickerName ?? pickerName;
+      await exportInwardReceiptExcel(
+        { noOfTiresRecv, pickerName: pickerNameForHeader, shift: shiftForHeader, rows },
+        planNoToExport,
+      );
     } catch (err) {
       console.error("Inward export failed:", err);
       const detail = err instanceof Error ? err.message : String(err);
@@ -412,11 +437,37 @@ export default function TireInward() {
       {confirmError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{confirmError}</div>}
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">1. Plan No</h2>
-        <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="inward" />
-        <p className="text-xs text-muted-foreground">
-          Every Inward you confirm today gets grouped under the selected plan no. Plan nos reset automatically tomorrow.
-        </p>
+        <h2 className="text-base font-medium text-foreground">1. Plan details</h2>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-foreground">Picker Name</span>
+          <input
+            type="text"
+            value={pickerName}
+            onChange={(e) => setPickerName(e.target.value)}
+            placeholder="Enter picker name"
+            autoComplete="off"
+            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-foreground">Plan No</span>
+          <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="inward" />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-foreground">Pallet No</span>
+          <input
+            type="text"
+            value={palletNo}
+            onChange={(e) => setPalletNo(e.target.value)}
+            placeholder="Enter pallet no"
+            autoComplete="off"
+            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-foreground">Shift</span>
+          <SelectMenu value={shift} placeholder="Select shift" options={SHIFT_OPTIONS} onChange={setShift} />
+        </label>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
@@ -728,7 +779,7 @@ export default function TireInward() {
       {selectedTires.length > 0 || !confirmedThisSession ? (
         <button
           onClick={handleConfirm}
-          disabled={selectedTires.length === 0 || !planNo.trim() || submitting}
+          disabled={selectedTires.length === 0 || !planNo.trim() || !palletNo.trim() || !shift || submitting}
           className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {submitting ? "Confirming…" : "OK - Confirm inward"}

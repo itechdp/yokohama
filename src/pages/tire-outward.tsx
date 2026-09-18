@@ -12,6 +12,7 @@ import TireCatalogSearch from "@/components/tire-catalog-search";
 import { floorCountAt, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
 import { exportPickSheetExcel, type PickSheetFormRow } from "@/lib/outward-excel-export";
 import { fetchTodayOutwardPicksForPlan, insertOutwardPicks } from "@/lib/outward-picks";
+import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
 import { touchPlanNumber } from "@/lib/plan-numbers";
 import { fetchTireBySkuQrCode } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
@@ -43,16 +44,27 @@ interface PickEntry {
   qty: number;
 }
 
+const SHIFT_OPTIONS = [
+  { value: "1", label: "Shift 1" },
+  { value: "2", label: "Shift 2" },
+  { value: "3", label: "Shift 3" },
+];
+
 export default function TireOutward() {
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
-  // Groups every Outward confirmed today under one Plan No. Not persisted
-  // anywhere client-side — only the DB (plan_numbers, touched on confirm)
-  // knows which plan nos exist; this is just which one is currently picked
-  // on screen, starting blank on every page load.
-  const [planNo, setPlanNo] = useState("");
+  // Groups every Outward confirmed today under one Plan No. Which plan
+  // numbers *exist* is entirely DB-backed (plan_numbers, touched on
+  // confirm); this is just which one is currently on screen, remembered
+  // per device (plan-no-draft.ts) so it stays put across page visits until
+  // the operator actually clears/changes it — not reset to blank each time.
+  const [planNo, setPlanNo] = useState(() => getStoredPlanNo("outward"));
+  const [pickerName, setPickerName] = useState("");
+  const [palletNo, setPalletNo] = useState("");
+  const [shift, setShift] = useState("");
   const handlePlanNoChange = (value: string) => {
     setPlanNo(value);
+    setStoredPlanNo("outward", value);
     // Switching plan no re-locks the Export button — it only unlocks again
     // once something's actually confirmed under whichever plan is now selected.
     setConfirmedThisSession(false);
@@ -125,9 +137,12 @@ export default function TireOutward() {
       ? `${currentAreaCode}-${manualStandCount > 1 ? manualStand : STAND_IDS[0]}${manualFloor}`
       : null;
 
-  // Picking a stand+floor block on the bin map sets exactly the same
-  // Row/Position/Stand/Floor state the dropdowns above do — the map is just
-  // another way to fill in the same single location.
+  // Picking a stand+floor block on the bin map commits the pick immediately
+  // — same one-tap behavior as Inward's map — instead of just filling in the
+  // Row/Position/Stand/Floor dropdowns and waiting for a separate "Add pick"
+  // press. It also mirrors the picked location into those dropdowns, so
+  // there's visible confirmation of what was picked and it's easy to add
+  // another tire to that same spot afterward without reopening the map.
   const selectFromBinMap = (areaCode: string, code: string) => {
     if (!selectedWarehouse) return;
     const [colStr, rowStr] = areaCode.slice(selectedWarehouse.prefix.length).split("-");
@@ -139,6 +154,7 @@ export default function TireOutward() {
     setManualStand(match[1]);
     setManualFloor(match[2]);
     setPickerAreaCode(null);
+    addPickAtLocation(code);
   };
 
   const addSelectedTire = (entry: { material: string; description: string; brand?: string; plyRatingBottom?: string }) => {
@@ -164,14 +180,12 @@ export default function TireOutward() {
     !!manualFloor &&
     (manualStandCount <= 1 || !!manualStand);
 
-  // One tire selected in step 1 can become several pick entries here — every
-  // selected tire type is recorded against the single location picked in
-  // step 2, each keeping its own quantity.
-  const addPick = () => {
-    if (!canAddPick || !selectedWarehouse) return;
-    const stand = manualStandCount > 1 ? manualStand : STAND_IDS[0];
-    const locationLabel = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}-${stand}${manualFloor}`;
-
+  // Shared by the manual Row/Position/Stand/Floor "Add pick" button and by
+  // tapping a slot directly on the bin map — one tire selected in step 1 can
+  // become several pick entries here, every selected tire type recorded
+  // against the one given location, each keeping its own quantity.
+  const addPickAtLocation = (locationLabel: string) => {
+    if (selectedTires.length === 0 || !selectedWarehouse) return;
     setPickEntries((prev) => [
       ...prev,
       ...selectedTires.map((t) => ({
@@ -185,9 +199,18 @@ export default function TireOutward() {
         qty: t.qty,
       })),
     ]);
-    // Location is kept as-is (the next batch is often from the same spot);
-    // only the tire selection resets, ready for the next one.
-    setSelectedTires([]);
+    // Tire selection is kept as-is — picking a location (button or map tap)
+    // no longer clears it, so the same tire(s) stay selected and the map
+    // stays open for picking another location, right up until Confirm.
+    // Operators remove a tire from the selection manually (the X button) if
+    // they're done with it before then.
+  };
+
+  const addPick = () => {
+    if (!canAddPick || !selectedWarehouse) return;
+    const stand = manualStandCount > 1 ? manualStand : STAND_IDS[0];
+    const locationLabel = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}-${stand}${manualFloor}`;
+    addPickAtLocation(locationLabel);
   };
 
   const removePick = (key: string) => {
@@ -217,8 +240,8 @@ export default function TireOutward() {
 
   const handleConfirm = async () => {
     if (submitting || pickEntries.length === 0) return;
-    if (!planNo.trim()) {
-      setConfirmError("Select or add a plan no before confirming.");
+    if (!planNo.trim() || !palletNo.trim() || !shift) {
+      setConfirmError("Fill in plan no, pallet no and shift before confirming.");
       return;
     }
     setSubmitting(true);
@@ -234,6 +257,9 @@ export default function TireOutward() {
       location: p.locationLabel,
       quantity: p.qty,
       planNo: planNo.trim(),
+      palletNo: palletNo.trim(),
+      shift,
+      pickerName: pickerName.trim(),
       pickedAt: now,
       pickedBy: "Forklift operator",
       notes: "",
@@ -250,6 +276,7 @@ export default function TireOutward() {
     setConfirmedThisSession(true);
 
     setPickEntries([]);
+    setSelectedTires([]);
     setSuccess(`${totalQty} tire${totalQty === 1 ? "" : "s"} across ${pickEntries.length} pick${pickEntries.length === 1 ? "" : "s"} recorded.`);
 
     // Downloads immediately on confirm — the operator shouldn't have to
@@ -269,14 +296,18 @@ export default function TireOutward() {
     try {
       const picks = await fetchTodayOutwardPicksForPlan(planNoToExport);
       const rows: PickSheetFormRow[] = picks.map((p) => ({
-        palletNo: "",
-        skuCode: p.material,
+        palletNo: p.palletNo,
+        skuCode: p.description ? `${p.material}\n${p.description}` : p.material,
         qty: p.quantity,
-        location: `${p.warehouse} - Bin ${p.location}`,
-        remarks: "",
+        warehouse: p.warehouse,
+        location: `Bin ${p.location}`,
+        time: new Date(p.pickedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       }));
-      const noOfTires = picks.reduce((sum, p) => sum + p.quantity, 0);
-      await exportPickSheetExcel({ noOfTires, rows }, planNoToExport);
+      // Picker Name reflects the most recently confirmed pick under this
+      // plan no (picks are oldest-first) — a plan is expected to stay on one
+      // picker, but if it ever spans more than one, the latest wins.
+      const pickerNameForHeader = picks[picks.length - 1]?.pickerName ?? pickerName;
+      await exportPickSheetExcel({ rows, pickerName: pickerNameForHeader }, planNoToExport);
     } catch (err) {
       console.error("Outward export failed:", err);
       const detail = err instanceof Error ? err.message : String(err);
@@ -314,11 +345,37 @@ export default function TireOutward() {
       {confirmError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{confirmError}</div>}
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">1. Plan No</h2>
-        <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="outward" />
-        <p className="text-xs text-muted-foreground">
-          Every Outward you confirm today gets grouped under the selected plan no. Plan nos reset automatically tomorrow.
-        </p>
+        <h2 className="text-base font-medium text-foreground">1. Plan details</h2>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-foreground">Picker Name</span>
+          <input
+            type="text"
+            value={pickerName}
+            onChange={(e) => setPickerName(e.target.value)}
+            placeholder="Enter picker name"
+            autoComplete="off"
+            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-foreground">Plan No</span>
+          <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="outward" />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-foreground">Pallet No</span>
+          <input
+            type="text"
+            value={palletNo}
+            onChange={(e) => setPalletNo(e.target.value)}
+            placeholder="Enter pallet no"
+            autoComplete="off"
+            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-foreground">Shift</span>
+          <SelectMenu value={shift} placeholder="Select shift" options={SHIFT_OPTIONS} onChange={setShift} />
+        </label>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
@@ -485,6 +542,10 @@ export default function TireOutward() {
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
             Choose a warehouse first.
           </div>
+        ) : selectedTires.length === 0 ? (
+          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
+            Select a tire above, then tap a spot on the map to pick it from there.
+          </div>
         ) : (
           <div className="overflow-auto max-h-96 rounded-xl border border-border">
             <table className="border-collapse text-xs">
@@ -581,7 +642,7 @@ export default function TireOutward() {
       {pickEntries.length > 0 || !confirmedThisSession ? (
         <button
           onClick={handleConfirm}
-          disabled={pickEntries.length === 0 || !planNo.trim() || submitting}
+          disabled={pickEntries.length === 0 || !planNo.trim() || !palletNo.trim() || !shift || submitting}
           className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {submitting ? "Confirming…" : "OK - Confirm outward"}

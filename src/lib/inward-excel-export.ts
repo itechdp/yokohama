@@ -2,13 +2,13 @@
  * Daily Tire's Receipt & Put Away - Excel export
  *
  * Recreates the paper reference form as an A4-landscape Excel workbook using
- * ExcelJS. Only NO OF TIRES RECV is populated dynamically from real data;
- * every other header field is left blank so it can be filled in by hand,
- * exactly like the paper form.
+ * ExcelJS. NO OF TIRES RECV, PLAN NO, DATE and SHIFT are all auto-filled
+ * from live data; every other header field is left blank so it can be
+ * filled in by hand, exactly like the paper form.
  *
  * The header block is a strict 3-column grid (LEFT / MID / RIGHT), matching
  * the reference photo: LEFT carries one full-width label per row, MID and
- * RIGHT carry a second/third label only on the rows that have one (Plant +
+ * RIGHT carry a second/third label only on the rows that have one (Plan No +
  * Date, Sheet No + Shift) and stay blank otherwise — not the finer,
  * mismatched column split an earlier version used.
  */
@@ -34,6 +34,8 @@ export interface InwardFormRow {
 
 export interface InwardFormOptions {
   noOfTiresRecv: number;
+  pickerName: string;
+  shift: string;
   rows: InwardFormRow[];
 }
 
@@ -167,7 +169,7 @@ const RIGHT_END = 10;
 // ---------------------------------------------------------------------------
 
 export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?: string): Promise<void> {
-  const { noOfTiresRecv, rows } = opts;
+  const { noOfTiresRecv, pickerName, rows, shift } = opts;
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Yokohama WMS";
@@ -243,8 +245,12 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?:
     },
   });
 
-  // ROW 2 - FID SUPERVISOR NAME (LEFT only; MID/RIGHT blank, same as the form)
-  mergeRange(ws, 2, LEFT_START, 2, LEFT_END, { value: "FID SUPERVISOR NAME :", bold: true, vAlign: "middle" });
+  // ROW 2 - FID SUPERVISOR NAME (auto-filled from the Picker Name input; LEFT only; MID/RIGHT blank, same as the form)
+  mergeRange(ws, 2, LEFT_START, 2, LEFT_END, {
+    value: `FID SUPERVISOR NAME :   ${pickerName}`,
+    bold: true,
+    vAlign: "middle",
+  });
   mergeRange(ws, 2, MID_START, 2, MID_END, { value: "", vAlign: "middle" });
   mergeRange(ws, 2, RIGHT_START, 2, RIGHT_END, { value: "", vAlign: "middle" });
 
@@ -253,19 +259,23 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?:
   mergeRange(ws, 3, MID_START, 3, MID_END, { value: "", vAlign: "middle" });
   mergeRange(ws, 3, RIGHT_START, 3, RIGHT_END, { value: "", vAlign: "middle" });
 
-  // ROW 4 - NO.OF PALLET RECV | PLANT | DATE
+  // ROW 4 - NO.OF PALLET RECV | PLAN NO (auto-filled) | DATE (auto-filled)
   mergeRange(ws, 4, LEFT_START, 4, LEFT_END, { value: "NO.OF PALLET RECV :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 4, MID_START, 4, MID_END, { value: "PLANT :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 4, RIGHT_START, 4, RIGHT_END, { value: "DATE :", bold: true, vAlign: "middle" });
+  mergeRange(ws, 4, MID_START, 4, MID_END, { value: `PLAN NO :   ${planNo ?? ""}`, bold: true, vAlign: "middle" });
+  mergeRange(ws, 4, RIGHT_START, 4, RIGHT_END, {
+    value: `DATE :   ${new Date().toLocaleDateString("en-GB")}`,
+    bold: true,
+    vAlign: "middle",
+  });
 
-  // ROW 5 - NO OF TIRES RECV (dynamically populated!) | SHEET NO | SHIFT
+  // ROW 5 - NO OF TIRES RECV (dynamically populated!) | SHEET NO | SHIFT (auto-filled)
   mergeRange(ws, 5, LEFT_START, 5, LEFT_END, {
     value: `NO OF TIRES RECV :   ${noOfTiresRecv}`,
     bold: true,
     vAlign: "middle",
   });
   mergeRange(ws, 5, MID_START, 5, MID_END, { value: "SHEET NO :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 5, RIGHT_START, 5, RIGHT_END, { value: "SHIFT :", bold: true, vAlign: "middle" });
+  mergeRange(ws, 5, RIGHT_START, 5, RIGHT_END, { value: `SHIFT :   ${shift}`, bold: true, vAlign: "middle" });
 
   // ROW 6 - NO OF NS RECV (LEFT only; rest of the row blank)
   mergeRange(ws, 6, LEFT_START, 6, LEFT_END, { value: "NO OF NS RECV :", bold: true, vAlign: "middle" });
@@ -301,13 +311,15 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?:
 
   for (let i = 0; i < DATA_ROWS; i++) {
     const excelRow = 8 + i;
-    ws.getRow(excelRow).height = 18;
+    // Taller than a single-line row — SKU CODE carries the tire description
+    // as a second line in the same cell, so it needs the extra height.
+    ws.getRow(excelRow).height = 28;
 
     const d = rows[i];
 
     singleCell(ws, excelRow, COL_SLNO, i + 1, { hAlign: "center", vAlign: "middle" });
     singleCell(ws, excelRow, COL_PALLET, d?.palletNo ?? "", { vAlign: "middle" });
-    singleCell(ws, excelRow, COL_SKU, d?.skuCode ?? "", { vAlign: "middle" });
+    singleCell(ws, excelRow, COL_SKU, d?.skuCode ?? "", { vAlign: "middle", wrapText: true });
     singleCell(ws, excelRow, COL_QTY, d?.qty ?? "", { hAlign: "center", vAlign: "middle" });
     singleCell(ws, excelRow, COL_LOCATION, d?.location ?? "", { vAlign: "middle" });
     singleCell(ws, excelRow, COL_RECV_TIME, d?.receivedTime ?? "", { hAlign: "center", vAlign: "middle" });

@@ -71,6 +71,9 @@ export interface OutwardPick {
   location: string;
   quantity: number;
   planNo: string;
+  palletNo: string;
+  shift: string;
+  pickerName: string;
   pickedAt: string;
   pickedBy: string;
   notes: string;
@@ -88,6 +91,9 @@ export interface InwardReceipt {
   location: string;
   quantity: number;
   planNo: string;
+  palletNo: string;
+  shift: string;
+  pickerName: string;
   receivedAt: string;
   receivedBy: string;
   notes: string;
