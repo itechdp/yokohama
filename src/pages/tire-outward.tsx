@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ArrowUpFromLine, Download, Loader2, MapPin, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
 import QtyStepper from "@/components/qty-stepper";
 import SelectMenu from "@/components/select-menu";
@@ -9,8 +10,9 @@ import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import { floorCountAt, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
-import { exportPickSheetExcel, type PickSheetFormOptions, type PickSheetFormRow } from "@/lib/outward-excel-export";
-import { insertOutwardPicks } from "@/lib/outward-picks";
+import { exportPickSheetExcel, type PickSheetFormRow } from "@/lib/outward-excel-export";
+import { fetchTodayOutwardPicksForPlan, insertOutwardPicks } from "@/lib/outward-picks";
+import { touchPlanNumber } from "@/lib/plan-numbers";
 import { fetchTireBySkuQrCode } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { TireSkuRow } from "@/lib/supabase";
@@ -44,6 +46,18 @@ interface PickEntry {
 export default function TireOutward() {
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
+  // Groups every Outward confirmed today under one Plan No. Not persisted
+  // anywhere client-side — only the DB (plan_numbers, touched on confirm)
+  // knows which plan nos exist; this is just which one is currently picked
+  // on screen, starting blank on every page load.
+  const [planNo, setPlanNo] = useState("");
+  const handlePlanNoChange = (value: string) => {
+    setPlanNo(value);
+    // Switching plan no re-locks the Export button — it only unlocks again
+    // once something's actually confirmed under whichever plan is now selected.
+    setConfirmedThisSession(false);
+  };
+
   const [selectedTires, setSelectedTires] = useState<SelectedTire[]>([]);
   const [warehouseKey, setWarehouseKey] = useState("");
   const [manualCol, setManualCol] = useState("");
@@ -60,10 +74,10 @@ export default function TireOutward() {
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  // The Excel export is only for the batch just confirmed — not a full
-  // history dump — so the "Export Excel" button stays disabled until at
-  // least one Outward pick has actually been confirmed in this session.
-  const [lastOutwardExport, setLastOutwardExport] = useState<PickSheetFormOptions | null>(null);
+  // Gates the Confirm/Export toggle button below — Export only becomes
+  // reachable once something has actually been confirmed in this session,
+  // never before.
+  const [confirmedThisSession, setConfirmedThisSession] = useState(false);
 
   useEffect(() => {
     fetchWarehouses().then((rows) => {
@@ -203,6 +217,10 @@ export default function TireOutward() {
 
   const handleConfirm = async () => {
     if (submitting || pickEntries.length === 0) return;
+    if (!planNo.trim()) {
+      setConfirmError("Select or add a plan no before confirming.");
+      return;
+    }
     setSubmitting(true);
     setSuccess(null);
     setConfirmError(null);
@@ -215,6 +233,7 @@ export default function TireOutward() {
       warehouse: p.warehouseLabel,
       location: p.locationLabel,
       quantity: p.qty,
+      planNo: planNo.trim(),
       pickedAt: now,
       pickedBy: "Forklift operator",
       notes: "",
@@ -227,62 +246,52 @@ export default function TireOutward() {
       return;
     }
 
-    // Export data is built straight from this confirm's own pick entries —
-    // not re-fetched from the database — so the exported sheet always
-    // matches exactly what was just picked. Multiple pick entries for the
-    // same tire at the same location (e.g. added in two separate "Add pick"
-    // taps) are aggregated first — one row with the combined Qty, not
-    // duplicate rows.
-    const grouped = new Map<string, { skuCode: string; location: string; qty: number }>();
-    for (const p of pickEntries) {
-      const key = `${p.material}|${p.warehouseLabel}|${p.locationLabel}`;
-      const existing = grouped.get(key);
-      if (existing) {
-        existing.qty += p.qty;
-      } else {
-        grouped.set(key, { skuCode: p.material, location: `${p.warehouseLabel} - Bin ${p.locationLabel}`, qty: p.qty });
-      }
-    }
-    const formRows: PickSheetFormRow[] = Array.from(grouped.values()).map((g) => ({
-      palletNo: "",
-      skuCode: g.skuCode,
-      qty: g.qty,
-      location: g.location,
-      remarks: "",
-    }));
-    const exportData: PickSheetFormOptions = { noOfTires: totalQty, rows: formRows };
-    setLastOutwardExport(exportData);
+    void touchPlanNumber(planNo.trim(), "outward");
+    setConfirmedThisSession(true);
 
     setPickEntries([]);
     setSuccess(`${totalQty} tire${totalQty === 1 ? "" : "s"} across ${pickEntries.length} pick${pickEntries.length === 1 ? "" : "s"} recorded.`);
 
     // Downloads immediately on confirm — the operator shouldn't have to
-    // click a second button to get the sheet they just generated. The
-    // Export Excel button still works afterwards, for re-downloading.
-    void downloadPickSheetExcel(exportData);
+    // click a second button to get the sheet they just generated. It's the
+    // full cumulative sheet for this plan no today, not just this confirm.
+    void buildAndDownloadOutwardExport(planNo.trim());
   };
 
-  // Shared by the auto-download right after confirm and the manual "Export
-  // Excel" button below — both just hand this whatever form data they have.
-  const downloadPickSheetExcel = async (data: PickSheetFormOptions) => {
+  // Fetches every Outward pick made today under the given Plan No (across
+  // any number of confirms, possibly from other devices) and builds the
+  // export from that — shared by the auto-download right after confirm and
+  // the manual "Export Excel" button below, so both always reflect the
+  // plan's full history, not just whatever happened in this browser tab.
+  const buildAndDownloadOutwardExport = async (planNoToExport: string) => {
     setExporting(true);
     setExportError(null);
     try {
-      await exportPickSheetExcel(data);
+      const picks = await fetchTodayOutwardPicksForPlan(planNoToExport);
+      const rows: PickSheetFormRow[] = picks.map((p) => ({
+        palletNo: "",
+        skuCode: p.material,
+        qty: p.quantity,
+        location: `${p.warehouse} - Bin ${p.location}`,
+        remarks: "",
+      }));
+      const noOfTires = picks.reduce((sum, p) => sum + p.quantity, 0);
+      await exportPickSheetExcel({ noOfTires, rows }, planNoToExport);
     } catch (err) {
       console.error("Outward export failed:", err);
-      setExportError("Export failed. Please try again.");
+      const detail = err instanceof Error ? err.message : String(err);
+      setExportError(`Export failed: ${detail}`);
     } finally {
       setExporting(false);
     }
   };
 
-  // "Export Excel" — re-downloads the PICK SHEET form for whatever was just
-  // confirmed above (lastOutwardExport). Only available after a confirm in
-  // this session — there's nothing to export before that.
+  // "Export Excel" — re-downloads the cumulative pick sheet for the plan no
+  // just confirmed above. Only reachable after a confirm in this session
+  // (see confirmedThisSession) — there's nothing to export before that.
   const handleExport = () => {
-    if (exporting || !lastOutwardExport) return;
-    void downloadPickSheetExcel(lastOutwardExport);
+    if (exporting || !confirmedThisSession || !planNo.trim()) return;
+    void buildAndDownloadOutwardExport(planNo.trim());
   };
 
   return (
@@ -305,8 +314,16 @@ export default function TireOutward() {
       {confirmError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{confirmError}</div>}
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
+        <h2 className="text-base font-medium text-foreground">1. Plan No</h2>
+        <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="outward" />
+        <p className="text-xs text-muted-foreground">
+          Every Outward you confirm today gets grouped under the selected plan no. Plan nos reset automatically tomorrow.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-medium text-foreground">1. Tire</h2>
+          <h2 className="text-base font-medium text-foreground">2. Tire</h2>
           <button
             type="button"
             onClick={() => setScanningTire(true)}
@@ -360,7 +377,7 @@ export default function TireOutward() {
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
           <WarehouseIcon className="size-4 text-muted-foreground" />
-          2. Picked from
+          3. Picked from
         </h2>
         {warehouses.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -463,7 +480,7 @@ export default function TireOutward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">3. Storage bins</h2>
+        <h2 className="text-base font-medium text-foreground">4. Storage bins</h2>
         {!selectedWarehouse ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
             Choose a warehouse first.
@@ -523,7 +540,7 @@ export default function TireOutward() {
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
           <MapPin className="size-4 text-muted-foreground" />
-          4. Picks to record
+          5. Picks to record
         </h2>
         {pickEntries.length === 0 ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
@@ -560,11 +577,11 @@ export default function TireOutward() {
 
       {/* One button, two modes: while there are picks staged it confirms the
           outward; once confirmed (and nothing new staged since) it turns
-          green and re-downloads the pick sheet that confirm just produced. */}
-      {pickEntries.length > 0 || !lastOutwardExport ? (
+          green and re-downloads the cumulative pick sheet for this plan no. */}
+      {pickEntries.length > 0 || !confirmedThisSession ? (
         <button
           onClick={handleConfirm}
-          disabled={pickEntries.length === 0 || submitting}
+          disabled={pickEntries.length === 0 || !planNo.trim() || submitting}
           className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {submitting ? "Confirming…" : "OK - Confirm outward"}

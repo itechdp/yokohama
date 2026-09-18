@@ -24,6 +24,7 @@ export interface InwardFormRow {
   palletNo: string;
   skuCode: string;
   qty: number | string;
+  location: string;
   receivedTime: string;
   actual?: string;
   putTime: string;
@@ -119,6 +120,13 @@ function singleCell(
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
+// Keeps a Plan No usable as a filename fragment — strips anything that isn't
+// alphanumeric/dash/underscore so a plan no like "123/A" can't break the
+// downloaded file's name.
+function safeFilenamePart(value: string): string {
+  return value.trim().replace(/[^a-zA-Z0-9_-]+/g, "-");
+}
+
 // Saves the generated workbook — a plain blob download on the web, or via
 // the native Share sheet when running inside the Android APK (see
 // native-download.ts for why the browser trick doesn't work there).
@@ -128,36 +136,37 @@ async function downloadWorkbook(wb: ExcelJS.Workbook, filename: string): Promise
 }
 
 // ---------------------------------------------------------------------------
-// Column indices (A=1...I=9) — one real grid column per table column, no
+// Column indices (A=1...J=10) — one real grid column per table column, no
 // extra filler columns.
 // ---------------------------------------------------------------------------
 const COL_SLNO = 1;
 const COL_PALLET = 2;
 const COL_SKU = 3;
 const COL_QTY = 4;
-const COL_RECV_TIME = 5;
-const COL_ACTUAL = 6;
-const COL_PUT_TIME = 7;
-const COL_TOTAL_TIME = 8;
-const COL_REMARKS = 9;
-const LAST_COL = 9;
+const COL_LOCATION = 5;
+const COL_RECV_TIME = 6;
+const COL_ACTUAL = 7;
+const COL_PUT_TIME = 8;
+const COL_TOTAL_TIME = 9;
+const COL_REMARKS = 10;
+const LAST_COL = 10;
 
-// Header block's 3-region split, reusing the same 9 physical columns as the
+// Header block's 3-region split, reusing the same 10 physical columns as the
 // table below it (so column widths only need to be defined once) — LEFT
 // lands close to half the sheet width since it spans the SKU CODE column,
 // the widest one.
 const LEFT_START = 1;
-const LEFT_END = 5;
-const MID_START = 6;
-const MID_END = 7;
-const RIGHT_START = 8;
-const RIGHT_END = 9;
+const LEFT_END = 6;
+const MID_START = 7;
+const MID_END = 8;
+const RIGHT_START = 9;
+const RIGHT_END = 10;
 
 // ---------------------------------------------------------------------------
 // Main export function
 // ---------------------------------------------------------------------------
 
-export async function exportInwardReceiptExcel(opts: InwardFormOptions): Promise<void> {
+export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?: string): Promise<void> {
   const { noOfTiresRecv, rows } = opts;
 
   const wb = new ExcelJS.Workbook();
@@ -203,6 +212,7 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions): Promise
   ws.getColumn(COL_PALLET).width = 17;
   ws.getColumn(COL_SKU).width = 36;
   ws.getColumn(COL_QTY).width = 10;
+  ws.getColumn(COL_LOCATION).width = 22;
   ws.getColumn(COL_RECV_TIME).width = 17;
   ws.getColumn(COL_ACTUAL).width = 14;
   ws.getColumn(COL_PUT_TIME).width = 15;
@@ -267,6 +277,7 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions): Promise
     { label: "PALLET NO", startCol: COL_PALLET, endCol: COL_PALLET },
     { label: "SKU CODE", startCol: COL_SKU, endCol: COL_SKU },
     { label: "QTY", startCol: COL_QTY, endCol: COL_QTY },
+    { label: "LOCATION", startCol: COL_LOCATION, endCol: COL_LOCATION },
     { label: "RECEIVED TIME", startCol: COL_RECV_TIME, endCol: COL_RECV_TIME },
     { label: "ACTUAL", startCol: COL_ACTUAL, endCol: COL_ACTUAL },
     { label: "PUT TIME", startCol: COL_PUT_TIME, endCol: COL_PUT_TIME },
@@ -298,6 +309,7 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions): Promise
     singleCell(ws, excelRow, COL_PALLET, d?.palletNo ?? "", { vAlign: "middle" });
     singleCell(ws, excelRow, COL_SKU, d?.skuCode ?? "", { vAlign: "middle" });
     singleCell(ws, excelRow, COL_QTY, d?.qty ?? "", { hAlign: "center", vAlign: "middle" });
+    singleCell(ws, excelRow, COL_LOCATION, d?.location ?? "", { vAlign: "middle" });
     singleCell(ws, excelRow, COL_RECV_TIME, d?.receivedTime ?? "", { hAlign: "center", vAlign: "middle" });
     singleCell(ws, excelRow, COL_ACTUAL, d?.actual ?? "", { hAlign: "center", vAlign: "middle" });
     singleCell(ws, excelRow, COL_PUT_TIME, d?.putTime ?? "", { hAlign: "center", vAlign: "middle" });
@@ -306,7 +318,8 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions): Promise
   }
 
   // Print area
-  ws.pageSetup.printArea = `A1:I${7 + DATA_ROWS}`;
+  ws.pageSetup.printArea = `A1:J${7 + DATA_ROWS}`;
 
-  await downloadWorkbook(wb, `inward-receipt-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  const planTag = planNo ? `${safeFilenamePart(planNo)}-` : "";
+  await downloadWorkbook(wb, `inward-receipt-${planTag}${new Date().toISOString().slice(0, 10)}.xlsx`);
 }

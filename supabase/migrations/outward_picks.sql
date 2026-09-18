@@ -13,6 +13,7 @@ create table if not exists public.outward_picks (
   warehouse text not null default '',
   location text not null default '',
   quantity integer not null default 0,
+  plan_no text not null default '',
   picked_at timestamptz not null default now(),
   picked_by text not null default '',
   notes text not null default '',
@@ -22,6 +23,7 @@ create table if not exists public.outward_picks (
 
 create index if not exists outward_picks_material_idx on public.outward_picks (material);
 create index if not exists outward_picks_picked_at_idx on public.outward_picks (picked_at);
+create index if not exists outward_picks_plan_no_idx on public.outward_picks (plan_no);
 
 drop trigger if exists set_outward_picks_updated_at on public.outward_picks;
 create trigger set_outward_picks_updated_at

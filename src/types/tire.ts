@@ -70,8 +70,26 @@ export interface OutwardPick {
   warehouse: string;
   location: string;
   quantity: number;
+  planNo: string;
   pickedAt: string;
   pickedBy: string;
+  notes: string;
+}
+
+// One Inward receipt record: "this many of this tire arrived at this bin",
+// grouped by Material + bin within a single confirm — mirrors OutwardPick's
+// role for the other direction. Several of these, across several confirms
+// sharing the same Plan No, are what the cumulative Inward Excel is built from.
+export interface InwardReceipt {
+  id: string;
+  material: string;
+  description: string;
+  warehouse: string;
+  location: string;
+  quantity: number;
+  planNo: string;
+  receivedAt: string;
+  receivedBy: string;
   notes: string;
 }
 

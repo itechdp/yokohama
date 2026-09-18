@@ -2,11 +2,10 @@
  * PICK SHEET - Excel export
  *
  * Recreates the paper "PICK SHEET" reference form as an A4-landscape Excel
- * workbook using ExcelJS, mirroring inward-excel-export.ts's approach for
- * the Daily Tire's Receipt & Put Away form. Only NO OF TIRES is populated
- * dynamically from real data; every other header field (Picker Name,
- * Operator Name, No.of Pallet, Plant, Date, Sheet No, Shift, Plan No) is
- * left blank for manual fill-in.
+ * workbook using ExcelJS, trimmed down to only the fields marked as kept on
+ * the reference form: Picker Name, Plant, Date, Shift, and a SI.NO / PALLET
+ * NO / SKU CODE / QTY / LOCATION table (no Operator Name, No.of Pallet, No
+ * of Tires, Sheet No, Plan No, Remark column, or footer sign-off block).
  *
  * The main table is populated from whatever Outward pick was just
  * confirmed — see tire-outward.tsx.
@@ -123,23 +122,31 @@ async function downloadWorkbook(wb: ExcelJS.Workbook, filename: string): Promise
   await saveGeneratedFile(buffer as ArrayBuffer, filename, XLSX_MIME);
 }
 
+// Keeps a Plan No usable as a filename fragment — strips anything that isn't
+// alphanumeric/dash/underscore so a plan no like "123/A" can't break the
+// downloaded file's name.
+function safeFilenamePart(value: string): string {
+  return value.trim().replace(/[^a-zA-Z0-9_-]+/g, "-");
+}
+
 // ---------------------------------------------------------------------------
-// Column indices (A=1...H=8)
+// Column indices (A=1...E=5) — one real grid column per table column, no
+// extra filler columns (the Remark column/footer sign-off block from the
+// reference form were dropped, so there's nothing to pad out to).
 // ---------------------------------------------------------------------------
 const COL_SLNO = 1;
 const COL_PALLET = 2;
 const COL_SKU = 3;
 const COL_QTY = 4;
 const COL_LOCATION = 5;
-const COL_REMARKS = 6;
-const LAST_COL = 8;
+const LAST_COL = 5;
 
 // ---------------------------------------------------------------------------
 // Main export function
 // ---------------------------------------------------------------------------
 
-export async function exportPickSheetExcel(opts: PickSheetFormOptions): Promise<void> {
-  const { noOfTires, rows } = opts;
+export async function exportPickSheetExcel(opts: PickSheetFormOptions, planNo?: string): Promise<void> {
+  const { rows } = opts;
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Yokohama WMS";
@@ -175,19 +182,12 @@ export async function exportPickSheetExcel(opts: PickSheetFormOptions): Promise<
     footer: 0.2,
   };
 
-  // Column widths — sized so the 8 columns' total width actually fills an
-  // A4 landscape page (≈153 Excel width units inside the 0.25in margins;
-  // Excel's "fit to page" only ever shrinks oversized content, it never
-  // stretches undersized content, so narrower columns than this leave a
-  // blank strip down the right side of every printed/exported page).
+  // Column widths
   ws.getColumn(COL_SLNO).width = 8;
   ws.getColumn(COL_PALLET).width = 17;
   ws.getColumn(COL_SKU).width = 34;
   ws.getColumn(COL_QTY).width = 10;
-  ws.getColumn(COL_LOCATION).width = 21;
-  ws.getColumn(COL_REMARKS).width = 21;
-  ws.getColumn(7).width = 21;
-  ws.getColumn(LAST_COL).width = 21;
+  ws.getColumn(COL_LOCATION).width = 30;
 
   // Row heights
   ws.getRow(1).height = 22;
@@ -195,8 +195,7 @@ export async function exportPickSheetExcel(opts: PickSheetFormOptions): Promise<
   ws.getRow(3).height = 18;
   ws.getRow(4).height = 18;
   ws.getRow(5).height = 18;
-  ws.getRow(6).height = 18;
-  ws.getRow(7).height = 22;
+  ws.getRow(6).height = 22;
 
   // ROW 1 - Title, with the reference form's green top/bottom banner rule
   mergeRange(ws, 1, 1, 1, LAST_COL, {
@@ -217,48 +216,29 @@ export async function exportPickSheetExcel(opts: PickSheetFormOptions): Promise<
   mergeRange(ws, 2, 1, 2, 2, { value: "PICKER NAME :", bold: true, vAlign: "middle" });
   mergeRange(ws, 2, 3, 2, LAST_COL, { value: "", vAlign: "middle" });
 
-  // ROW 3 - OPERATOR NAME
-  mergeRange(ws, 3, 1, 3, 2, { value: "OPERATOR NAME :", bold: true, vAlign: "middle" });
+  // ROW 3 - PLANT
+  mergeRange(ws, 3, 1, 3, 2, { value: "PLANT :", bold: true, vAlign: "middle" });
   mergeRange(ws, 3, 3, 3, LAST_COL, { value: "", vAlign: "middle" });
 
-  // ROW 4 - NO.OF PALLET | PLANT | DATE
-  mergeRange(ws, 4, 1, 4, 2, { value: "NO.OF PALLET :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 4, 3, 4, 3, { value: "", vAlign: "middle" });
-  mergeRange(ws, 4, 4, 4, 5, { value: "PLANT :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 4, 6, 4, 6, { value: "", vAlign: "middle" });
-  mergeRange(ws, 4, 7, 4, 7, { value: "DATE :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 4, 8, 4, LAST_COL, { value: "", vAlign: "middle" });
+  // ROW 4 - DATE
+  mergeRange(ws, 4, 1, 4, 2, { value: "DATE :", bold: true, vAlign: "middle" });
+  mergeRange(ws, 4, 3, 4, LAST_COL, { value: "", vAlign: "middle" });
 
-  // ROW 5 - NO OF TIRES (dynamically populated!) | SHEET NO | SHIFT
-  mergeRange(ws, 5, 1, 5, 2, { value: "NO OF TIRES :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 5, 3, 5, 3, {
-    value: noOfTires,
-    bold: true,
-    fontSize: 10,
-    hAlign: "center",
-    vAlign: "middle",
-  });
-  mergeRange(ws, 5, 4, 5, 5, { value: "SHEET NO :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 5, 6, 5, 6, { value: "", vAlign: "middle" });
-  mergeRange(ws, 5, 7, 5, 7, { value: "SHIFT :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 5, 8, 5, LAST_COL, { value: "", vAlign: "middle" });
+  // ROW 5 - SHIFT
+  mergeRange(ws, 5, 1, 5, 2, { value: "SHIFT :", bold: true, vAlign: "middle" });
+  mergeRange(ws, 5, 3, 5, LAST_COL, { value: "", vAlign: "middle" });
 
-  // ROW 6 - PLAN NO
-  mergeRange(ws, 6, 1, 6, 2, { value: "PLAN NO :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 6, 3, 6, LAST_COL, { value: "", vAlign: "middle" });
-
-  // ROW 7 - Table column headers
+  // ROW 6 - Table column headers
   const headers = [
     { label: "SI.NO", startCol: COL_SLNO, endCol: COL_SLNO },
     { label: "PALLET NO", startCol: COL_PALLET, endCol: COL_PALLET },
     { label: "SKU CODE", startCol: COL_SKU, endCol: COL_SKU },
     { label: "QTY", startCol: COL_QTY, endCol: COL_QTY },
     { label: "LOCATION", startCol: COL_LOCATION, endCol: COL_LOCATION },
-    { label: "REMARK", startCol: COL_REMARKS, endCol: LAST_COL },
   ];
 
   for (const h of headers) {
-    mergeRange(ws, 7, h.startCol, 7, h.endCol, {
+    mergeRange(ws, 6, h.startCol, 6, h.endCol, {
       value: h.label,
       bold: true,
       fontSize: 9,
@@ -272,7 +252,7 @@ export async function exportPickSheetExcel(opts: PickSheetFormOptions): Promise<
   const DATA_ROWS = Math.max(rows.length, 20);
 
   for (let i = 0; i < DATA_ROWS; i++) {
-    const excelRow = 8 + i;
+    const excelRow = 7 + i;
     ws.getRow(excelRow).height = 20;
 
     const d = rows[i];
@@ -282,27 +262,11 @@ export async function exportPickSheetExcel(opts: PickSheetFormOptions): Promise<
     singleCell(ws, excelRow, COL_SKU, d?.skuCode ?? "", { vAlign: "middle" });
     singleCell(ws, excelRow, COL_QTY, d?.qty ?? "", { hAlign: "center", vAlign: "middle" });
     singleCell(ws, excelRow, COL_LOCATION, d?.location ?? "", { vAlign: "middle" });
-    mergeRange(ws, excelRow, COL_REMARKS, excelRow, LAST_COL, {
-      value: d?.remarks ?? "",
-      vAlign: "middle",
-    });
   }
 
-  // Footer — Picker Name / Operator Name / Sign boxes, as shown on the
-  // reference form.
-  const footerRow = 9 + DATA_ROWS;
-  ws.getRow(footerRow).height = 20;
-  ws.getRow(footerRow + 1).height = 20;
-  mergeRange(ws, footerRow, 1, footerRow, 3, { value: "PICKER NAME", bold: true, vAlign: "middle" });
-  mergeRange(ws, footerRow, 4, footerRow, 5, { value: "", vAlign: "middle" });
-  mergeRange(ws, footerRow, 6, footerRow, 7, { value: "OPERATOR NAME", bold: true, vAlign: "middle" });
-  mergeRange(ws, footerRow, 8, footerRow, LAST_COL, { value: "", vAlign: "middle" });
-  mergeRange(ws, footerRow + 1, 1, footerRow + 1, 5, { value: "", vAlign: "middle" });
-  mergeRange(ws, footerRow + 1, 6, footerRow + 1, 7, { value: "SIGN", bold: true, vAlign: "middle" });
-  mergeRange(ws, footerRow + 1, 8, footerRow + 1, LAST_COL, { value: "", vAlign: "middle" });
-
   // Print area
-  ws.pageSetup.printArea = `A1:H${footerRow + 1}`;
+  ws.pageSetup.printArea = `A1:E${6 + DATA_ROWS}`;
 
-  await downloadWorkbook(wb, `pick-sheet-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  const planTag = planNo ? `${safeFilenamePart(planNo)}-` : "";
+  await downloadWorkbook(wb, `pick-sheet-${planTag}${new Date().toISOString().slice(0, 10)}.xlsx`);
 }

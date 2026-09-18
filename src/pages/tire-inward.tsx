@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { ArrowDownToLine, ArrowLeftRight, Download, Loader2, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ExchangeLocationModal from "@/components/exchange-location-modal";
+import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
 import QtyStepper from "@/components/qty-stepper";
 import SelectMenu from "@/components/select-menu";
@@ -10,14 +11,16 @@ import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import { binCounts, firstBin, floorCountAt, locationForBin, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
-import { exportInwardReceiptExcel, type InwardFormOptions, type InwardFormRow } from "@/lib/inward-excel-export";
+import { exportInwardReceiptExcel, type InwardFormRow } from "@/lib/inward-excel-export";
+import { fetchTodayInwardReceiptsForPlan, insertInwardReceipts } from "@/lib/inward-receipts";
 import { insertPlacementLogs } from "@/lib/placement-logs";
+import { touchPlanNumber } from "@/lib/plan-numbers";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
 import { insertTireHistory } from "@/lib/tire-history";
 import { fetchTireBySkuQrCode, fetchTires, upsertTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { TireSkuRow } from "@/lib/supabase";
-import type { PlacementLog, StageHistory, Tire } from "@/types/tire";
+import type { InwardReceipt, PlacementLog, StageHistory, Tire } from "@/types/tire";
 
 interface SelectedTire {
   key: string;
@@ -31,6 +34,18 @@ interface SelectedTire {
 export default function TireInward() {
   const [tires, setTires] = useState<Tire[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
+
+  // Groups every Inward confirmed today under one Plan No. Not persisted
+  // anywhere client-side — only the DB (plan_numbers, touched on confirm)
+  // knows which plan nos exist; this is just which one is currently picked
+  // on screen, starting blank on every page load.
+  const [planNo, setPlanNo] = useState("");
+  const handlePlanNoChange = (value: string) => {
+    setPlanNo(value);
+    // Switching plan no re-locks the Export button — it only unlocks again
+    // once something's actually confirmed under whichever plan is now selected.
+    setConfirmedThisSession(false);
+  };
 
   const [selectedTires, setSelectedTires] = useState<SelectedTire[]>([]);
   const [warehouseKey, setWarehouseKey] = useState("");
@@ -47,13 +62,13 @@ export default function TireInward() {
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
   const [scanningTire, setScanningTire] = useState(false);
+  // Gates the Confirm/Export toggle button below — Export only becomes
+  // reachable once something has actually been confirmed in this session,
+  // never before.
+  const [confirmedThisSession, setConfirmedThisSession] = useState(false);
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  // The Excel export is only for the batch just confirmed — not a full
-  // history dump — so the "Export Excel" button stays disabled until at
-  // least one Inward has actually been confirmed in this session.
-  const [lastInwardExport, setLastInwardExport] = useState<InwardFormOptions | null>(null);
 
   useEffect(() => {
     fetchTires().then(setTires);
@@ -173,6 +188,11 @@ export default function TireInward() {
     setSubmitting(true);
     setSuccess(null);
     setConfirmError(null);
+    if (!planNo.trim()) {
+      setConfirmError("Select or add a plan no before confirming.");
+      setSubmitting(false);
+      return;
+    }
     if (selectedTires.length === 0 || !selectedWarehouse) {
       setSubmitting(false);
       return;
@@ -277,34 +297,39 @@ export default function TireInward() {
     await insertTireHistory(newHistory);
     await insertPlacementLogs(newLogs);
 
-    // Export data is built straight from this confirm's own assignments —
-    // not re-fetched from the database — so the exported sheet always
-    // matches exactly what was just placed. The form doesn't show location
-    // (PALLET NO stays blank — the operator fills it in by hand), so rows
-    // are aggregated by material alone — 5 of the same tire across any
-    // bins becomes one row with Qty 5, not duplicate rows.
-    const receivedTime = new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    const grouped = new Map<string, { skuCode: string; qty: number }>();
+    // One receipt row per distinct Material + bin in this confirm (5 of the
+    // same tire in the same bin becomes one row with Qty 5, not duplicate
+    // rows — but different bins stay separate rows, so LOCATION on the
+    // exported sheet is always exact), persisted under the active Plan No so
+    // the export below — and any later confirm made under the same plan no
+    // today — can pull every receipt together instead of just this one.
+    const grouped = new Map<string, { material: string; location: string; qty: number }>();
     for (const a of assignments) {
-      const existing = grouped.get(a.material);
+      const location = locationForBin(selectedWarehouse, a.bin);
+      const key = `${a.material}|${location}`;
+      const existing = grouped.get(key);
       if (existing) {
         existing.qty += 1;
       } else {
-        grouped.set(a.material, { skuCode: a.material, qty: 1 });
+        grouped.set(key, { material: a.material, location, qty: 1 });
       }
     }
-    const formRows: InwardFormRow[] = Array.from(grouped.values()).map((g) => ({
-      palletNo: "",
-      skuCode: g.skuCode,
-      qty: g.qty,
-      receivedTime,
-      actual: "",
-      putTime: receivedTime,
-      totalTime: "",
-      remarks: "",
+    const receipts: InwardReceipt[] = Array.from(grouped.values()).map((g, idx) => ({
+      id: `ir-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+      material: g.material,
+      description: selectedTires.find((t) => t.material === g.material)?.model ?? "",
+      warehouse: selectedWarehouse.label,
+      location: g.location,
+      quantity: g.qty,
+      planNo: planNo.trim(),
+      receivedAt: now,
+      receivedBy: "Forklift operator",
+      notes: "",
     }));
-    const exportData: InwardFormOptions = { noOfTiresRecv: assignments.length, rows: formRows };
-    setLastInwardExport(exportData);
+    const { error: receiptError } = await insertInwardReceipts(receipts);
+    if (receiptError) console.warn("Failed to record inward receipts for export:", receiptError);
+    void touchPlanNumber(planNo.trim(), "inward");
+    setConfirmedThisSession(true);
 
     setTires((prev) => {
       const byId = new Map(prev.map((t) => [t.id, t]));
@@ -319,32 +344,52 @@ export default function TireInward() {
     setSubmitting(false);
 
     // Downloads immediately on confirm — the operator shouldn't have to
-    // click a second button to get the receipt they just generated. The
-    // Export Excel button still works afterwards, for re-downloading.
-    void downloadInwardExcel(exportData);
+    // click a second button to get the receipt they just generated. It's the
+    // full cumulative sheet for this plan no today, not just this confirm.
+    void buildAndDownloadInwardExport(planNo.trim());
   };
 
-  // Shared by the auto-download right after confirm and the manual "Export
-  // Excel" button below — both just hand this whatever form data they have.
-  const downloadInwardExcel = async (data: InwardFormOptions) => {
+  // Fetches every Inward receipt recorded today under the given Plan No
+  // (across any number of confirms, possibly from other devices) and builds
+  // the export from that — shared by the auto-download right after confirm
+  // and the manual "Export Excel" button below, so both always reflect the
+  // plan's full history, not just whatever happened in this browser tab.
+  const buildAndDownloadInwardExport = async (planNoToExport: string) => {
     setExporting(true);
     setExportError(null);
     try {
-      await exportInwardReceiptExcel(data);
+      const receipts = await fetchTodayInwardReceiptsForPlan(planNoToExport);
+      const rows: InwardFormRow[] = receipts.map((r) => {
+        const time = new Date(r.receivedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        return {
+          palletNo: "",
+          skuCode: r.material,
+          qty: r.quantity,
+          location: r.location,
+          receivedTime: time,
+          actual: "",
+          putTime: time,
+          totalTime: "",
+          remarks: "",
+        };
+      });
+      const noOfTiresRecv = receipts.reduce((sum, r) => sum + r.quantity, 0);
+      await exportInwardReceiptExcel({ noOfTiresRecv, rows }, planNoToExport);
     } catch (err) {
       console.error("Inward export failed:", err);
-      setExportError("Export failed. Please try again.");
+      const detail = err instanceof Error ? err.message : String(err);
+      setExportError(`Export failed: ${detail}`);
     } finally {
       setExporting(false);
     }
   };
 
-  // "Export Excel" — re-downloads the Daily Tire's Receipt & Put Away form
-  // for whatever was just confirmed above (lastInwardExport). Only available
-  // after a confirm in this session — there's nothing to export before that.
+  // "Export Excel" — re-downloads the cumulative receipt sheet for the plan
+  // no just confirmed above. Only reachable after a confirm in this session
+  // (see confirmedThisSession) — there's nothing to export before that.
   const handleExport = () => {
-    if (exporting || !lastInwardExport) return;
-    void downloadInwardExcel(lastInwardExport);
+    if (exporting || !confirmedThisSession || !planNo.trim()) return;
+    void buildAndDownloadInwardExport(planNo.trim());
   };
 
   return (
@@ -367,8 +412,16 @@ export default function TireInward() {
       {confirmError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{confirmError}</div>}
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
+        <h2 className="text-base font-medium text-foreground">1. Plan No</h2>
+        <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="inward" />
+        <p className="text-xs text-muted-foreground">
+          Every Inward you confirm today gets grouped under the selected plan no. Plan nos reset automatically tomorrow.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-medium text-foreground">1. Select tires</h2>
+          <h2 className="text-base font-medium text-foreground">2. Select tires</h2>
           <button
             type="button"
             onClick={() => setScanningTire(true)}
@@ -420,7 +473,7 @@ export default function TireInward() {
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
             <WarehouseIcon className="size-4 text-muted-foreground" />
-            2. Warehouse
+            3. Warehouse
           </h2>
           <div className="flex items-center gap-2 shrink-0">
             <button
@@ -471,7 +524,7 @@ export default function TireInward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">3. Select storage location</h2>
+        <h2 className="text-base font-medium text-foreground">4. Select storage location</h2>
         {!selectedWarehouse ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
             Choose a warehouse first.
@@ -609,7 +662,7 @@ export default function TireInward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">4. Storage bins</h2>
+        <h2 className="text-base font-medium text-foreground">5. Storage bins</h2>
         {!selectedWarehouse ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
             Choose a warehouse first.
@@ -671,11 +724,11 @@ export default function TireInward() {
 
       {/* One button, two modes: while there are tires staged it confirms the
           inward; once confirmed (and nothing new staged since) it turns
-          green and re-downloads the receipt that confirm just produced. */}
-      {selectedTires.length > 0 || !lastInwardExport ? (
+          green and re-downloads the cumulative receipt for this plan no. */}
+      {selectedTires.length > 0 || !confirmedThisSession ? (
         <button
           onClick={handleConfirm}
-          disabled={selectedTires.length === 0 || submitting}
+          disabled={selectedTires.length === 0 || !planNo.trim() || submitting}
           className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {submitting ? "Confirming…" : "OK - Confirm inward"}

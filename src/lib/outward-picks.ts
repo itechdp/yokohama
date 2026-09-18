@@ -1,3 +1,4 @@
+import { startOfTodayIso } from "@/lib/date-utils";
 import { supabase } from "@/lib/supabase";
 import type { OutwardPick } from "@/types/tire";
 
@@ -8,6 +9,7 @@ interface OutwardPickRow {
   warehouse: string;
   location: string;
   quantity: number;
+  plan_no: string;
   picked_at: string;
   picked_by: string;
   notes: string;
@@ -21,6 +23,7 @@ function toRow(p: OutwardPick) {
     warehouse: p.warehouse,
     location: p.location,
     quantity: p.quantity,
+    plan_no: p.planNo,
     picked_at: p.pickedAt,
     picked_by: p.pickedBy,
     notes: p.notes,
@@ -35,6 +38,7 @@ function fromRow(row: OutwardPickRow): OutwardPick {
     warehouse: row.warehouse,
     location: row.location,
     quantity: row.quantity,
+    planNo: row.plan_no,
     pickedAt: row.picked_at,
     pickedBy: row.picked_by,
     notes: row.notes,
@@ -60,6 +64,25 @@ export async function fetchOutwardPicks(): Promise<OutwardPick[]> {
   const { data, error } = await supabase.from("outward_picks").select("*").order("picked_at", { ascending: false });
   if (error) {
     console.warn("outward_picks fetch failed:", error.message);
+    return [];
+  }
+  return (data ?? []).map(fromRow);
+}
+
+// Every pick made today under one Plan No, oldest first — what the
+// cumulative PICK SHEET export is built from, so an 11:30am pick shows up
+// alongside an 11:00am one under the same plan no instead of replacing it.
+export async function fetchTodayOutwardPicksForPlan(planNo: string): Promise<OutwardPick[]> {
+  const trimmed = planNo.trim();
+  if (!trimmed) return [];
+  const { data, error } = await supabase
+    .from("outward_picks")
+    .select("*")
+    .eq("plan_no", trimmed)
+    .gte("picked_at", startOfTodayIso())
+    .order("picked_at", { ascending: true });
+  if (error) {
+    console.warn("outward_picks plan fetch failed:", error.message);
     return [];
   }
   return (data ?? []).map(fromRow);
