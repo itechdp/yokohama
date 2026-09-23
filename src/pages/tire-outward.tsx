@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowUpFromLine, Download, Loader2, MapPin, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { ArrowUpFromLine, MapPin, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
@@ -10,8 +10,7 @@ import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import { floorCountAt, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
-import { exportPickSheetExcel, type PickSheetFormRow } from "@/lib/outward-excel-export";
-import { fetchTodayOutwardPicksForPlan, insertOutwardPicks } from "@/lib/outward-picks";
+import { insertOutwardPicks } from "@/lib/outward-picks";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
 import { touchPlanNumber } from "@/lib/plan-numbers";
 import { fetchTireBySkuQrCode } from "@/lib/tires";
@@ -66,9 +65,6 @@ export default function TireOutward() {
   const handlePlanNoChange = (value: string) => {
     setPlanNo(value);
     setStoredPlanNo("outward", value);
-    // Switching plan no re-locks the Export button — it only unlocks again
-    // once something's actually confirmed under whichever plan is now selected.
-    setConfirmedThisSession(false);
   };
 
   const [selectedTires, setSelectedTires] = useState<SelectedTire[]>([]);
@@ -85,12 +81,6 @@ export default function TireOutward() {
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
-  // Gates the Confirm/Export toggle button below — Export only becomes
-  // reachable once something has actually been confirmed in this session,
-  // never before.
-  const [confirmedThisSession, setConfirmedThisSession] = useState(false);
 
   useEffect(() => {
     fetchWarehouses().then((rows) => {
@@ -277,56 +267,10 @@ export default function TireOutward() {
     }
 
     void touchPlanNumber(planNo.trim(), "outward");
-    setConfirmedThisSession(true);
 
     setPickEntries([]);
     setSelectedTires([]);
     setSuccess(`${totalQty} tire${totalQty === 1 ? "" : "s"} across ${pickEntries.length} pick${pickEntries.length === 1 ? "" : "s"} recorded.`);
-
-    // Downloads immediately on confirm — the operator shouldn't have to
-    // click a second button to get the sheet they just generated. It's the
-    // full cumulative sheet for this plan no today, not just this confirm.
-    void buildAndDownloadOutwardExport(planNo.trim());
-  };
-
-  // Fetches every Outward pick made today under the given Plan No (across
-  // any number of confirms, possibly from other devices) and builds the
-  // export from that — shared by the auto-download right after confirm and
-  // the manual "Export Excel" button below, so both always reflect the
-  // plan's full history, not just whatever happened in this browser tab.
-  const buildAndDownloadOutwardExport = async (planNoToExport: string) => {
-    setExporting(true);
-    setExportError(null);
-    try {
-      const picks = await fetchTodayOutwardPicksForPlan(planNoToExport);
-      const rows: PickSheetFormRow[] = picks.map((p) => ({
-        palletNo: p.palletNo,
-        skuCode: p.description ? `${p.material}\n${p.description}` : p.material,
-        qty: p.quantity,
-        warehouse: p.warehouse,
-        location: `Bin ${p.location}`,
-        time: new Date(p.pickedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      }));
-      // Picker Name reflects the most recently confirmed pick under this
-      // plan no (picks are oldest-first) — a plan is expected to stay on one
-      // picker, but if it ever spans more than one, the latest wins.
-      const pickerNameForHeader = picks[picks.length - 1]?.pickerName ?? pickerName;
-      await exportPickSheetExcel({ rows, pickerName: pickerNameForHeader }, planNoToExport);
-    } catch (err) {
-      console.error("Outward export failed:", err);
-      const detail = err instanceof Error ? err.message : String(err);
-      setExportError(`Export failed: ${detail}`);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  // "Export Excel" — re-downloads the cumulative pick sheet for the plan no
-  // just confirmed above. Only reachable after a confirm in this session
-  // (see confirmedThisSession) — there's nothing to export before that.
-  const handleExport = () => {
-    if (exporting || !confirmedThisSession || !planNo.trim()) return;
-    void buildAndDownloadOutwardExport(planNo.trim());
   };
 
   return (
@@ -628,30 +572,13 @@ export default function TireOutward() {
         )}
       </div>
 
-      {/* One button, two modes: while there are picks staged it confirms the
-          outward; once confirmed (and nothing new staged since) it turns
-          green and re-downloads the cumulative pick sheet for this plan no. */}
-      {pickEntries.length > 0 || !confirmedThisSession ? (
-        <button
-          onClick={handleConfirm}
-          disabled={pickEntries.length === 0 || !planNo.trim() || !shift || submitting}
-          className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {submitting ? "Confirming…" : "OK - Confirm outward"}
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={exporting}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-success px-4 py-3.5 text-base font-semibold text-white hover:bg-success/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {exporting ? <Loader2 className="size-5 animate-spin" /> : <Download className="size-5" />}
-          Export Excel
-        </button>
-      )}
-
-      {exportError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{exportError}</div>}
+      <button
+        onClick={handleConfirm}
+        disabled={pickEntries.length === 0 || !planNo.trim() || !shift || submitting}
+        className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        {submitting ? "Confirming…" : "OK - Confirm outward"}
+      </button>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
 

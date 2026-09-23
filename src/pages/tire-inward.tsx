@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowDownToLine, ArrowLeftRight, Download, Loader2, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ExchangeLocationModal from "@/components/exchange-location-modal";
 import PlanNoPicker from "@/components/plan-no-picker";
@@ -11,8 +11,7 @@ import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import { binCounts, firstBin, floorCountAt, locationForBin, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
-import { exportInwardReceiptExcel, type InwardFormRow } from "@/lib/inward-excel-export";
-import { fetchTodayInwardReceiptsForPlan, insertInwardReceipts } from "@/lib/inward-receipts";
+import { insertInwardReceipts } from "@/lib/inward-receipts";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
 import { touchPlanNumber } from "@/lib/plan-numbers";
@@ -54,9 +53,6 @@ export default function TireInward() {
   const handlePlanNoChange = (value: string) => {
     setPlanNo(value);
     setStoredPlanNo("inward", value);
-    // Switching plan no re-locks the Export button — it only unlocks again
-    // once something's actually confirmed under whichever plan is now selected.
-    setConfirmedThisSession(false);
   };
 
   const [selectedTires, setSelectedTires] = useState<SelectedTire[]>([]);
@@ -74,13 +70,6 @@ export default function TireInward() {
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
   const [scanningTire, setScanningTire] = useState(false);
-  // Gates the Confirm/Export toggle button below — Export only becomes
-  // reachable once something has actually been confirmed in this session,
-  // never before.
-  const [confirmedThisSession, setConfirmedThisSession] = useState(false);
-
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTires().then(setTires);
@@ -344,7 +333,6 @@ export default function TireInward() {
     const { error: receiptError } = await insertInwardReceipts(receipts);
     if (receiptError) console.warn("Failed to record inward receipts for export:", receiptError);
     void touchPlanNumber(planNo.trim(), "inward");
-    setConfirmedThisSession(true);
 
     setTires((prev) => {
       const byId = new Map(prev.map((t) => [t.id, t]));
@@ -357,64 +345,6 @@ export default function TireInward() {
       `${assignments.length} tire${assignments.length === 1 ? "" : "s"} across ${selectedTires.length} type${selectedTires.length === 1 ? "" : "s"} placed across ${binsArray.length} bin${binsArray.length === 1 ? "" : "s"} in ${selectedWarehouse.label}.`,
     );
     setSubmitting(false);
-
-    // Downloads immediately on confirm — the operator shouldn't have to
-    // click a second button to get the receipt they just generated. It's the
-    // full cumulative sheet for this plan no today, not just this confirm.
-    void buildAndDownloadInwardExport(planNo.trim());
-  };
-
-  // Fetches every Inward receipt recorded today under the given Plan No
-  // (across any number of confirms, possibly from other devices) and builds
-  // the export from that — shared by the auto-download right after confirm
-  // and the manual "Export Excel" button below, so both always reflect the
-  // plan's full history, not just whatever happened in this browser tab.
-  const buildAndDownloadInwardExport = async (planNoToExport: string) => {
-    setExporting(true);
-    setExportError(null);
-    try {
-      const receipts = await fetchTodayInwardReceiptsForPlan(planNoToExport);
-      const rows: InwardFormRow[] = receipts.map((r) => {
-        const time = new Date(r.receivedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        return {
-          palletNo: r.palletNo,
-          skuCode: r.description ? `${r.material}\n${r.description}` : r.material,
-          qty: r.quantity,
-          location: r.location,
-          receivedTime: time,
-          actual: "",
-          putTime: time,
-          totalTime: "",
-          remarks: "",
-        };
-      });
-      const noOfTiresRecv = receipts.reduce((sum, r) => sum + r.quantity, 0);
-      // Header Shift/Picker Name reflect the most recently confirmed receipt
-      // under this plan no (receipts are oldest-first) — a plan is expected
-      // to stay on one shift/picker, but if it ever spans more than one, the
-      // latest wins.
-      const latest = receipts[receipts.length - 1];
-      const shiftForHeader = latest?.shift ?? shift;
-      const pickerNameForHeader = latest?.pickerName ?? pickerName;
-      await exportInwardReceiptExcel(
-        { noOfTiresRecv, pickerName: pickerNameForHeader, shift: shiftForHeader, rows },
-        planNoToExport,
-      );
-    } catch (err) {
-      console.error("Inward export failed:", err);
-      const detail = err instanceof Error ? err.message : String(err);
-      setExportError(`Export failed: ${detail}`);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  // "Export Excel" — re-downloads the cumulative receipt sheet for the plan
-  // no just confirmed above. Only reachable after a confirm in this session
-  // (see confirmedThisSession) — there's nothing to export before that.
-  const handleExport = () => {
-    if (exporting || !confirmedThisSession || !planNo.trim()) return;
-    void buildAndDownloadInwardExport(planNo.trim());
   };
 
   return (
@@ -773,30 +703,13 @@ export default function TireInward() {
         )}
       </div>
 
-      {/* One button, two modes: while there are tires staged it confirms the
-          inward; once confirmed (and nothing new staged since) it turns
-          green and re-downloads the cumulative receipt for this plan no. */}
-      {selectedTires.length > 0 || !confirmedThisSession ? (
-        <button
-          onClick={handleConfirm}
-          disabled={selectedTires.length === 0 || !planNo.trim() || !palletNo.trim() || !shift || submitting}
-          className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {submitting ? "Confirming…" : "OK - Confirm inward"}
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={exporting}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-success px-4 py-3.5 text-base font-semibold text-white hover:bg-success/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {exporting ? <Loader2 className="size-5 animate-spin" /> : <Download className="size-5" />}
-          Export Excel
-        </button>
-      )}
-
-      {exportError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{exportError}</div>}
+      <button
+        onClick={handleConfirm}
+        disabled={selectedTires.length === 0 || !planNo.trim() || !palletNo.trim() || !shift || submitting}
+        className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        {submitting ? "Confirming…" : "OK - Confirm inward"}
+      </button>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
 
