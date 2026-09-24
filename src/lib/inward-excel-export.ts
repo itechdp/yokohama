@@ -37,6 +37,9 @@ export interface InwardFormOptions {
   pickerName: string;
   shift: string;
   rows: InwardFormRow[];
+  // Date printed on the sheet — defaults to today; History passes the
+  // plan's own date when re-downloading an older plan.
+  date?: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +173,7 @@ const RIGHT_END = 10;
 
 export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?: string): Promise<void> {
   const { noOfTiresRecv, pickerName, rows, shift } = opts;
+  const sheetDate = opts.date ?? new Date();
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Yokohama WMS";
@@ -263,7 +267,7 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?:
   mergeRange(ws, 4, LEFT_START, 4, LEFT_END, { value: "NO.OF PALLET RECV :", bold: true, vAlign: "middle" });
   mergeRange(ws, 4, MID_START, 4, MID_END, { value: `PLAN NO :   ${planNo ?? ""}`, bold: true, vAlign: "middle" });
   mergeRange(ws, 4, RIGHT_START, 4, RIGHT_END, {
-    value: `DATE :   ${new Date().toLocaleDateString("en-GB")}`,
+    value: `DATE :   ${sheetDate.toLocaleDateString("en-GB")}`,
     bold: true,
     vAlign: "middle",
   });

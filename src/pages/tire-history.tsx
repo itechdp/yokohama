@@ -13,7 +13,14 @@ import {
   Search,
 } from "lucide-react";
 import SelectMenu from "@/components/select-menu";
-import { fetchHistoryRows, groupHistoryRows, type HistoryBatch, type HistoryRow, type HistoryType } from "@/lib/history-report";
+import {
+  fetchHistoryRows,
+  groupHistoryRows,
+  localDateKey,
+  type HistoryBatch,
+  type HistoryRow,
+  type HistoryType,
+} from "@/lib/history-report";
 import { exportInwardReceiptExcel, type InwardFormRow } from "@/lib/inward-excel-export";
 import { exportPickSheetExcel, type PickSheetFormRow } from "@/lib/outward-excel-export";
 import { cn } from "@/lib/utils";
@@ -31,15 +38,12 @@ function formatDateTime(iso: string): string {
   return d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
-// Local YYYY-MM-DD from an ISO timestamp — used to compare against the
-// plain-date <input type="date"> filters below (which have no timezone).
-function dateKey(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function skuCell(material: string, description: string): string {
+  return description && description !== "—" ? `${material}\n${description}` : material;
 }
 
 export default function TireHistory() {
@@ -74,7 +78,7 @@ export default function TireHistory() {
   const filteredRows = useMemo(() => {
     return rows.filter((r) => {
       if (typeFilter !== "all" && r.type !== typeFilter) return false;
-      const key = dateKey(r.at);
+      const key = localDateKey(r.at);
       if (dateFrom && key < dateFrom) return false;
       if (dateTo && key > dateTo) return false;
       return true;
@@ -83,13 +87,17 @@ export default function TireHistory() {
 
   const batches = useMemo(() => groupHistoryRows(filteredRows), [filteredRows]);
 
-  // Search matches a batch if any of its lines' material/description match —
+  // Search matches a batch by Plan No, or if any of its lines' material/description match —
   // applied after grouping since it's about "does this batch contain X",
   // not a per-row fact.
   const filteredBatches = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return batches;
-    return batches.filter((b) => b.lines.some((l) => l.material.toLowerCase().includes(q) || l.description.toLowerCase().includes(q)));
+    return batches.filter(
+      (b) =>
+        b.planNo.toLowerCase().includes(q) ||
+        b.lines.some((l) => l.material.toLowerCase().includes(q) || l.description.toLowerCase().includes(q)),
+    );
   }, [batches, search]);
 
   const pageCount = Math.max(1, Math.ceil(filteredBatches.length / pageSize));
@@ -114,41 +122,44 @@ export default function TireHistory() {
     });
   };
 
-  // Re-downloads a whole batch as its own form — the same Daily Receipt /
-  // PICK SHEET layout used at confirm time, one line per aggregated
-  // material+location, not one per physical tire.
+  // Re-downloads a whole plan as its own form — the same Daily Receipt /
+  // PICK SHEET layout used at confirm time, with every confirm made under
+  // that plan no on that day, one line per material+location+pallet.
   const handleBatchDownload = async (batch: HistoryBatch) => {
     if (downloadingKey) return;
     setDownloadingKey(batch.key);
     try {
+      const date = new Date(batch.at);
+      const planNo = batch.planNo || undefined;
       if (batch.type === "inward") {
-        const time = new Date(batch.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        // The form doesn't show location (PALLET NO stays blank), so lines
-        // are re-aggregated by material alone here too — otherwise the same
-        // tire split across two bins would print as two blank-looking rows.
-        const byMaterial = new Map<string, number>();
-        for (const l of batch.lines) byMaterial.set(l.material, (byMaterial.get(l.material) ?? 0) + l.quantity);
-        const formRows: InwardFormRow[] = Array.from(byMaterial.entries()).map(([material, qty]) => ({
-          palletNo: "",
-          skuCode: material,
-          qty,
-          receivedTime: time,
+        const formRows: InwardFormRow[] = batch.lines.map((l) => ({
+          palletNo: l.palletNo,
+          skuCode: skuCell(l.material, l.description),
+          qty: l.quantity,
+          location: l.warehouse === "—" ? l.location : `${l.warehouse} - Bin ${l.location}`,
+          receivedTime: formatTime(l.at),
           actual: "",
-          putTime: time,
+          putTime: formatTime(l.at),
           totalTime: "",
           remarks: "",
         }));
-        await exportInwardReceiptExcel({ noOfTiresRecv: batch.totalQuantity, rows: formRows });
+        await exportInwardReceiptExcel(
+          { noOfTiresRecv: batch.totalQuantity, pickerName: batch.pickerName, shift: batch.shift, rows: formRows, date },
+          planNo,
+        );
       } else {
         const formRows: PickSheetFormRow[] = batch.lines.map((l) => ({
-          palletNo: "",
-          skuCode: l.material,
+          palletNo: l.palletNo,
+          skuCode: skuCell(l.material, l.description),
           qty: l.quantity,
-          location: `${l.warehouse} - Bin ${l.location}`,
-          remarks: "",
+          warehouse: l.warehouse,
+          location: `Bin ${l.location}`,
+          time: formatTime(l.at),
         }));
-        await exportPickSheetExcel({ noOfTires: batch.totalQuantity, rows: formRows });
+        await exportPickSheetExcel({ pickerName: batch.pickerName, rows: formRows, date }, planNo);
       }
+    } catch (err) {
+      console.error("History export failed:", err);
     } finally {
       setDownloadingKey(null);
     }
@@ -219,7 +230,7 @@ export default function TireHistory() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search by material or description"
+            placeholder="Search by plan no, material or description"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -242,7 +253,7 @@ export default function TireHistory() {
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-muted-foreground">
-              {filteredBatches.length} batch{filteredBatches.length === 1 ? "" : "es"}
+              {filteredBatches.length} plan{filteredBatches.length === 1 ? "" : "s"}
               {filteredBatches.length > 0 && ` — showing ${rangeStart}–${rangeEnd}`}
             </p>
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -250,6 +261,7 @@ export default function TireHistory() {
               <SelectMenu
                 value={String(pageSize)}
                 options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
+                placeholder="Per page"
                 onChange={(v) => {
                   setPageSize(Number(v));
                   setPage(0);
@@ -292,8 +304,13 @@ export default function TireHistory() {
                         {b.type === "inward" ? <ArrowDownToLine className="size-3" /> : <ArrowUpFromLine className="size-3" />}
                         {b.type === "inward" ? "Inward" : "Outward"}
                       </span>
+                      <span className="mr-auto text-sm font-semibold text-foreground truncate">
+                        {b.planNo ? `Plan ${b.planNo}` : "No plan no"}
+                      </span>
                       <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-xs text-muted-foreground">{formatDateTime(b.at)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {b.firstAt !== b.at ? `${formatDateTime(b.firstAt)} – ${formatTime(b.at)}` : formatDateTime(b.at)}
+                        </span>
                         <button
                           type="button"
                           onClick={(e) => {
@@ -320,14 +337,25 @@ export default function TireHistory() {
                         <p className="text-xs text-muted-foreground">
                           {b.lines[0].material} · {b.lines[0].warehouse} · {b.lines[0].location}
                         </p>
-                        <p className="text-xs text-muted-foreground">Qty {b.lines[0].quantity}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Qty {b.lines[0].quantity}
+                          {b.lines[0].palletNo && ` · Pallet ${b.lines[0].palletNo}`}
+                          {b.shift && ` · Shift ${b.shift}`}
+                          {b.pickerName && ` · ${b.pickerName}`}
+                        </p>
                       </>
                     ) : (
                       <>
                         <p className="text-sm font-medium text-foreground">
                           {distinctMaterials} tire type{distinctMaterials === 1 ? "" : "s"} · {b.totalQuantity} tire
                           {b.totalQuantity === 1 ? "" : "s"} total
+                          {b.confirmCount > 1 && ` · ${b.confirmCount} entries`}
                         </p>
+                        {(b.shift || b.pickerName) && (
+                          <p className="text-xs text-muted-foreground">
+                            {[b.shift && `Shift ${b.shift}`, b.pickerName].filter(Boolean).join(" · ")}
+                          </p>
+                        )}
                         <p className="text-xs text-muted-foreground truncate">
                           {Array.from(new Set(b.lines.map((l) => l.material))).join(", ")}
                         </p>
@@ -342,6 +370,7 @@ export default function TireHistory() {
                           <p className="font-medium text-foreground">{l.description}</p>
                           <p className="text-xs text-muted-foreground">
                             {l.material} · {l.warehouse} · {l.location} · Qty {l.quantity}
+                            {l.palletNo && ` · Pallet ${l.palletNo}`} · {formatTime(l.at)}
                           </p>
                         </div>
                       ))}

@@ -31,6 +31,9 @@ export interface PickSheetFormRow {
 export interface PickSheetFormOptions {
   pickerName: string;
   rows: PickSheetFormRow[];
+  // Date printed on the sheet — defaults to today; History passes the
+  // plan's own date when re-downloading an older plan.
+  date?: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +153,7 @@ const LAST_COL = 7;
 
 export async function exportPickSheetExcel(opts: PickSheetFormOptions, planNo?: string): Promise<void> {
   const { rows, pickerName } = opts;
+  const sheetDate = opts.date ?? new Date();
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Yokohama WMS";
@@ -227,7 +231,7 @@ export async function exportPickSheetExcel(opts: PickSheetFormOptions, planNo?: 
 
   // ROW 4 - DATE (auto-filled with today's date)
   mergeRange(ws, 4, 1, 4, 2, { value: "DATE :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 4, 3, 4, LAST_COL, { value: new Date().toLocaleDateString("en-GB"), vAlign: "middle" });
+  mergeRange(ws, 4, 3, 4, LAST_COL, { value: sheetDate.toLocaleDateString("en-GB"), vAlign: "middle" });
 
   // ROW 5 - TIME (auto-filled with the time this sheet was generated)
   mergeRange(ws, 5, 1, 5, 2, { value: "TIME :", bold: true, vAlign: "middle" });

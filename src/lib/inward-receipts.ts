@@ -65,6 +65,17 @@ export async function insertInwardReceipts(rows: InwardReceipt[]): Promise<{ err
   return { error: null };
 }
 
+// Full Inward receipt history — used by the History page to group entries
+// by Plan No. Newest first, same ordering convention as fetchOutwardPicks.
+export async function fetchInwardReceipts(): Promise<InwardReceipt[]> {
+  const { data, error } = await supabase.from("inward_receipts").select("*").order("received_at", { ascending: false });
+  if (error) {
+    console.warn("inward_receipts fetch failed:", error.message);
+    return [];
+  }
+  return (data ?? []).map(fromRow);
+}
+
 // Every receipt recorded today under one Plan No, oldest first — what the
 // cumulative Inward export is built from, so an 11:30am confirm shows up
 // alongside an 11:00am one under the same plan no instead of replacing it.
