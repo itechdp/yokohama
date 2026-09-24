@@ -4,7 +4,6 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   CalendarDays,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -58,7 +57,6 @@ export default function TireHistory() {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
 
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -111,15 +109,6 @@ export default function TireHistory() {
     setDateFrom("");
     setDateTo("");
     setSearch("");
-  };
-
-  const toggleExpanded = (key: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
   };
 
   // Re-downloads a whole plan as its own form — the same Daily Receipt /
@@ -273,109 +262,50 @@ export default function TireHistory() {
 
           <div className="space-y-2">
             {pageBatches.map((b) => {
-              const isOpen = expanded.has(b.key);
-              const isSingleLine = b.lines.length === 1;
-              const distinctMaterials = new Set(b.lines.map((l) => l.material)).size;
+              // A plan can span several pallets across its confirms — list each once.
+              const pallets = Array.from(new Set(b.lines.map((l) => l.palletNo).filter(Boolean)));
+              const fields = [
+                { label: "Plan No", value: b.planNo },
+                { label: "Pallet No", value: pallets.join(", ") },
+                { label: "Shift", value: b.shift },
+                { label: b.type === "inward" ? "Supervisor" : "Picker Name", value: b.pickerName },
+              ];
               return (
-                <div key={b.key} className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
-                  <div
-                    role={isSingleLine ? undefined : "button"}
-                    tabIndex={isSingleLine ? undefined : 0}
-                    onClick={isSingleLine ? undefined : () => toggleExpanded(b.key)}
-                    onKeyDown={
-                      isSingleLine
-                        ? undefined
-                        : (e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              toggleExpanded(b.key);
-                            }
-                          }
-                    }
-                    className={cn("w-full p-4 text-left space-y-1.5 transition-colors", !isSingleLine && "hover:bg-muted/40 cursor-pointer")}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
-                          b.type === "inward" ? "bg-info/10 text-info" : "bg-warning-soft text-warning",
-                        )}
+                <div key={b.key} className="rounded-2xl border border-border bg-card shadow-sm p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
+                        b.type === "inward" ? "bg-info/10 text-info" : "bg-warning-soft text-warning",
+                      )}
+                    >
+                      {b.type === "inward" ? <ArrowDownToLine className="size-3" /> : <ArrowUpFromLine className="size-3" />}
+                      {b.type === "inward" ? "Inward" : "Outward"}
+                    </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-xs text-muted-foreground">
+                        {b.firstAt !== b.at ? `${formatDateTime(b.firstAt)} – ${formatTime(b.at)}` : formatDateTime(b.at)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleBatchDownload(b)}
+                        disabled={downloadingKey === b.key}
+                        aria-label="Download plan as Excel"
+                        className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-40"
                       >
-                        {b.type === "inward" ? <ArrowDownToLine className="size-3" /> : <ArrowUpFromLine className="size-3" />}
-                        {b.type === "inward" ? "Inward" : "Outward"}
-                      </span>
-                      <span className="mr-auto text-sm font-semibold text-foreground truncate">
-                        {b.planNo ? `Plan ${b.planNo}` : "No plan no"}
-                      </span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-xs text-muted-foreground">
-                          {b.firstAt !== b.at ? `${formatDateTime(b.firstAt)} – ${formatTime(b.at)}` : formatDateTime(b.at)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleBatchDownload(b);
-                          }}
-                          disabled={downloadingKey === b.key}
-                          aria-label="Download batch as Excel"
-                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-40"
-                        >
-                          {downloadingKey === b.key ? <Loader2 className="size-5 animate-spin" /> : <Download className="size-5" />}
-                        </button>
-                        {/* Reserved even for single-line batches (just invisible) so every
-                            card's download button lands at the same x position. */}
-                        <span className={cn("flex size-6 items-center justify-center", isSingleLine && "invisible")}>
-                          <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
-                        </span>
-                      </div>
+                        {downloadingKey === b.key ? <Loader2 className="size-5 animate-spin" /> : <Download className="size-5" />}
+                      </button>
                     </div>
-
-                    {isSingleLine ? (
-                      <>
-                        <p className="text-sm font-medium text-foreground">{b.lines[0].description}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {b.lines[0].material} · {b.lines[0].warehouse} · {b.lines[0].location}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Qty {b.lines[0].quantity}
-                          {b.lines[0].palletNo && ` · Pallet ${b.lines[0].palletNo}`}
-                          {b.shift && ` · Shift ${b.shift}`}
-                          {b.pickerName && ` · ${b.pickerName}`}
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-sm font-medium text-foreground">
-                          {distinctMaterials} tire type{distinctMaterials === 1 ? "" : "s"} · {b.totalQuantity} tire
-                          {b.totalQuantity === 1 ? "" : "s"} total
-                          {b.confirmCount > 1 && ` · ${b.confirmCount} entries`}
-                        </p>
-                        {(b.shift || b.pickerName) && (
-                          <p className="text-xs text-muted-foreground">
-                            {[b.shift && `Shift ${b.shift}`, b.pickerName].filter(Boolean).join(" · ")}
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground truncate">
-                          {Array.from(new Set(b.lines.map((l) => l.material))).join(", ")}
-                        </p>
-                      </>
-                    )}
                   </div>
 
-                  {isOpen && !isSingleLine && (
-                    <div className="border-t border-border divide-y divide-border">
-                      {b.lines.map((l, i) => (
-                        <div key={i} className="px-4 py-2.5 text-sm">
-                          <p className="font-medium text-foreground">{l.description}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {l.material} · {l.warehouse} · {l.location} · Qty {l.quantity}
-                            {l.palletNo && ` · Pallet ${l.palletNo}`} · {formatTime(l.at)}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2">
+                    {fields.map((f) => (
+                      <div key={f.label} className="min-w-0">
+                        <dt className="text-xs text-muted-foreground">{f.label}</dt>
+                        <dd className="text-sm font-medium text-foreground truncate">{f.value || "—"}</dd>
+                      </div>
+                    ))}
+                  </dl>
                 </div>
               );
             })}
