@@ -78,6 +78,49 @@ export async function fetchOutwardPicks(): Promise<OutwardPick[]> {
   return (data ?? []).map(fromRow);
 }
 
+// A plan already picked under, with the details it was last confirmed
+// under — backs the "Ongoing plan" dropdown on Outward so an operator can
+// pick it and have Picker Name / Plan No / Shift filled in.
+export interface OngoingOutwardPlan {
+  planNo: string;
+  pickerName: string;
+  shift: string;
+  lastPickedAt: string;
+}
+
+// One entry per Plan No ever picked under, most recently active first
+// (across every device, since it's read from the shared table), each
+// carrying the picker name/shift from that plan's latest pick. Pages
+// through the table since PostgREST caps a single response at 1000 rows.
+export async function fetchOngoingOutwardPlans(): Promise<OngoingOutwardPlan[]> {
+  const pageSize = 1000;
+  const seen = new Map<string, OngoingOutwardPlan>();
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("outward_picks")
+      .select("plan_no, picker_name, shift, picked_at")
+      .order("picked_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) {
+      console.warn("outward_picks ongoing plans fetch failed:", error.message);
+      break;
+    }
+    for (const row of data ?? []) {
+      const planNo = (row.plan_no as string)?.trim();
+      if (!planNo || seen.has(planNo)) continue;
+      seen.set(planNo, {
+        planNo,
+        pickerName: (row.picker_name as string) ?? "",
+        shift: (row.shift as string) ?? "",
+        lastPickedAt: row.picked_at as string,
+      });
+    }
+    if (!data || data.length < pageSize) break;
+  }
+  return [...seen.values()];
+}
+
 // Every pick made today under one Plan No, oldest first — what the
 // cumulative PICK SHEET export is built from, so an 11:30am pick shows up
 // alongside an 11:00am one under the same plan no instead of replacing it.

@@ -20,6 +20,7 @@ export default function SelectMenu({
   placeholder,
   disabled,
   onChange,
+  onOpen,
   className,
 }: {
   value: string;
@@ -27,6 +28,8 @@ export default function SelectMenu({
   placeholder: string;
   disabled?: boolean;
   onChange: (value: string) => void;
+  // Fired each time the list opens — lets callers refresh DB-backed options.
+  onOpen?: () => void;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -93,7 +96,11 @@ export default function SelectMenu({
       <button
         ref={buttonRef}
         type="button"
-        onClick={() => !disabled && setOpen((o) => !o)}
+        onClick={() => {
+          if (disabled) return;
+          if (!open) onOpen?.();
+          setOpen(!open);
+        }}
         disabled={disabled}
         className="w-full flex items-center justify-between gap-1 rounded-lg border border-border bg-card px-2 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-40 disabled:cursor-not-allowed"
       >

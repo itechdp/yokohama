@@ -10,7 +10,7 @@ import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import { floorCountAt, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
-import { insertOutwardPicks } from "@/lib/outward-picks";
+import { fetchOngoingOutwardPlans, insertOutwardPicks, type OngoingOutwardPlan } from "@/lib/outward-picks";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
 import { touchPlanNumber } from "@/lib/plan-numbers";
 import { fetchTireBySkuQrCode } from "@/lib/tires";
@@ -67,6 +67,21 @@ export default function TireOutward() {
     setStoredPlanNo("outward", value);
   };
 
+  // Every plan picked under so far, latest first — choosing one fills in the rest of
+  // Plan details from that plan's latest pick.
+  const [ongoingPlans, setOngoingPlans] = useState<OngoingOutwardPlan[]>([]);
+  const loadOngoingPlans = () => {
+    fetchOngoingOutwardPlans().then(setOngoingPlans);
+  };
+  const selectOngoingPlan = (value: string) => {
+    const plan = ongoingPlans.find((p) => p.planNo === value);
+    if (!plan) return;
+    handlePlanNoChange(plan.planNo);
+    // Older picks predate picker name/shift — keep whatever's typed then.
+    if (plan.pickerName) setPickerName(plan.pickerName);
+    if (plan.shift) setShift(plan.shift);
+  };
+
   const [selectedTires, setSelectedTires] = useState<SelectedTire[]>([]);
   const [warehouseKey, setWarehouseKey] = useState("");
   const [manualCol, setManualCol] = useState("");
@@ -87,6 +102,7 @@ export default function TireOutward() {
       setWarehouses(rows);
       setWarehouseKey((prev) => prev || rows[0]?.key || "");
     });
+    loadOngoingPlans();
   }, []);
 
   const selectedWarehouse = warehouses.find((w) => w.key === warehouseKey) || null;
@@ -267,6 +283,7 @@ export default function TireOutward() {
     }
 
     void touchPlanNumber(planNo.trim(), "outward");
+    loadOngoingPlans();
 
     setPickEntries([]);
     setSelectedTires([]);
@@ -294,6 +311,19 @@ export default function TireOutward() {
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">1. Plan details</h2>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-foreground">Ongoing plan</span>
+          <SelectMenu
+            value={ongoingPlans.some((p) => p.planNo === planNo.trim()) ? planNo.trim() : ""}
+            placeholder={ongoingPlans.length === 0 ? "No plans yet" : "Select ongoing plan"}
+            options={ongoingPlans.map((p) => ({
+              value: p.planNo,
+              label: [p.planNo, p.pickerName, p.shift && `Shift ${p.shift}`].filter(Boolean).join(" · "),
+            }))}
+            onChange={selectOngoingPlan}
+            onOpen={loadOngoingPlans}
+          />
+        </label>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium text-foreground">Picker Name</span>
           <input
