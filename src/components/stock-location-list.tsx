@@ -1,0 +1,116 @@
+import { Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import QtyStepper from "@/components/qty-stepper";
+import { binForLocation, type WarehouseDef } from "@/data/warehouse-bins";
+import type { StockMap } from "@/hooks/use-stock-locations";
+
+// One place a selected tire currently sits in stock — a card in the list.
+export interface StockCard {
+  key: string;
+  material: string;
+  description: string;
+  // Exact tires.location — "<warehouse label> - Bin <code>".
+  location: string;
+  warehouseLabel: string;
+  code: string;
+  inStock: number;
+}
+
+export const stockCardKey = (material: string, location: string) => `${material}|${location}`;
+
+// Every location holding each selected tire, in warehouse order then by bin
+// code. Locations with nothing in stock simply aren't in the map, so they
+// never show up.
+export function buildStockCards(
+  tires: { material: string; description: string }[],
+  warehouses: WarehouseDef[],
+  stock: StockMap,
+): StockCard[] {
+  const cards: StockCard[] = [];
+  for (const tire of tires) {
+    const forTire: (StockCard & { order: number })[] = [];
+    for (const [location, byMaterial] of stock) {
+      const inStock = byMaterial.get(tire.material) ?? 0;
+      if (inStock <= 0) continue;
+      const order = warehouses.findIndex((w) => binForLocation(w, location) !== null);
+      const warehouse = warehouses[order];
+      forTire.push({
+        key: stockCardKey(tire.material, location),
+        material: tire.material,
+        description: tire.description,
+        location,
+        warehouseLabel: warehouse?.label ?? "—",
+        code: (warehouse && binForLocation(warehouse, location)) ?? location,
+        inStock,
+        order: order === -1 ? warehouses.length : order,
+      });
+    }
+    forTire.sort((a, b) => a.order - b.order || a.code.localeCompare(b.code));
+    cards.push(...forTire.map(({ order: _order, ...card }) => card));
+  }
+  return cards;
+}
+
+// The green location cards on Picking/Outward: one per place a selected tire
+// is in stock, each with its own quantity to take (0 up to what's there).
+export default function StockLocationList({
+  tires,
+  cards,
+  loading,
+  qty,
+  onQtyChange,
+}: {
+  tires: { material: string }[];
+  cards: StockCard[];
+  loading: boolean;
+  qty: Record<string, number>;
+  onQtyChange: (key: string, value: number) => void;
+}) {
+  if (tires.length === 0) {
+    return (
+      <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
+        Select a tire above to see where it is in stock.
+      </div>
+    );
+  }
+  if (loading) {
+    return (
+      <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+        <Loader2 className="size-4 animate-spin" />
+        Finding where it is in stock…
+      </div>
+    );
+  }
+
+  const missing = tires.filter((t) => !cards.some((c) => c.material === t.material));
+  return (
+    <div className="space-y-2">
+      {cards.map((c) => {
+        const taking = qty[c.key] ?? 0;
+        return (
+          <div
+            key={c.key}
+            className={cn(
+              "rounded-xl border px-4 py-3 text-center space-y-2 transition-colors",
+              taking > 0 ? "border-success bg-success/15" : "border-success/30 bg-success/5",
+            )}
+          >
+            <p className="text-lg font-semibold tracking-wide text-success">{c.code}</p>
+            <p className="text-sm font-medium text-foreground truncate">{c.description}</p>
+            <p className="text-xs text-muted-foreground truncate">
+              {c.material} · {c.warehouseLabel} · {c.inStock} in stock
+            </p>
+            <div className="flex justify-center">
+              <QtyStepper value={taking} min={0} max={c.inStock} onChange={(v) => onQtyChange(c.key, v)} />
+            </div>
+          </div>
+        );
+      })}
+      {missing.map((t) => (
+        <p key={t.material} className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">
+          {t.material} is not in stock in any warehouse.
+        </p>
+      ))}
+    </div>
+  );
+}
