@@ -14,7 +14,6 @@ export interface StockExportRow {
   warehouse: string;
   row: string;
   position: string;
-  floor: string;
   quantity: number;
 }
 
@@ -32,7 +31,6 @@ export const GLOBAL_STOCK_EXPORT_COLUMNS: StockExportColumn[] = [
   { key: "warehouse", header: "Warehouse" },
   { key: "row", header: "Row" },
   { key: "position", header: "Position" },
-  { key: "floor", header: "Floor" },
   { key: "quantity", header: "Quantity" },
 ];
 
@@ -42,7 +40,6 @@ export const LOCATION_STOCK_EXPORT_COLUMNS: StockExportColumn[] = [
   { key: "serialNumber", header: "Serial No." },
   { key: "brand", header: "Brand" },
   { key: "model", header: "Model" },
-  { key: "floor", header: "Floor" },
   { key: "quantity", header: "Quantity" },
 ];
 

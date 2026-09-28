@@ -6,10 +6,9 @@ import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
 import QtyStepper from "@/components/qty-stepper";
 import SelectMenu from "@/components/select-menu";
-import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
-import { floorCountAt, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
+import type { WarehouseDef } from "@/data/warehouse-bins";
 import { fetchOngoingOutwardPlans, insertOutwardPicks, type OngoingOutwardPlan } from "@/lib/outward-picks";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
 import { touchPlanNumber } from "@/lib/plan-numbers";
@@ -86,12 +85,9 @@ export default function TireOutward() {
   const [warehouseKey, setWarehouseKey] = useState("");
   const [manualCol, setManualCol] = useState("");
   const [manualRow, setManualRow] = useState("");
-  const [manualStand, setManualStand] = useState("");
-  const [manualFloor, setManualFloor] = useState("");
 
   const [pickEntries, setPickEntries] = useState<PickEntry[]>([]);
   const [scanningTire, setScanningTire] = useState(false);
-  const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
 
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -122,44 +118,26 @@ export default function TireOutward() {
     return Array.from({ length: maxRows }, (_, i) => i + 1);
   }, [selectedWarehouse, manualCol, maxRows]);
 
-  const manualStandCount = selectedWarehouse && manualCol ? standCountAt(selectedWarehouse, Number(manualCol)) : 1;
-
-  const maxFloors = selectedWarehouse
-    ? Math.max(...selectedWarehouse.columnRowCounts.map((_, i) => floorCountAt(selectedWarehouse, i + 1)))
-    : 0;
-  const manualFloorCount = selectedWarehouse ? (manualCol ? floorCountAt(selectedWarehouse, Number(manualCol)) : maxFloors) : 0;
-  const floorOptions = useMemo(() => Array.from({ length: manualFloorCount }, (_, i) => i + 1), [manualFloorCount]);
-
   // The area code (prefix+col-row) the current manual selection points at, if
   // both Row and Position are picked — used to highlight the matching cell
-  // in the bin map below, and to know which cell's picker to reopen already
-  // showing the current stand/floor selected.
+  // in the bin map below.
   const currentAreaCode =
     selectedWarehouse && manualCol && manualRow
       ? `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`
       : null;
-  const currentFullCode =
-    currentAreaCode && manualFloor && (manualStandCount <= 1 || manualStand)
-      ? `${currentAreaCode}-${manualStandCount > 1 ? manualStand : STAND_IDS[0]}${manualFloor}`
-      : null;
 
-  // Picking a stand+floor block on the bin map commits the pick immediately
-  // — same one-tap behavior as Inward's map — instead of just filling in the
-  // Row/Position/Stand/Floor dropdowns and waiting for a separate "Add pick"
-  // press. It also mirrors the picked location into those dropdowns, so
-  // there's visible confirmation of what was picked and it's easy to add
-  // another tire to that same spot afterward without reopening the map.
-  const selectFromBinMap = (areaCode: string, code: string) => {
+  // Tapping a cell on the bin map commits the pick immediately — same
+  // one-tap behavior as Inward's map — instead of just filling in the
+  // Row/Position dropdowns and waiting for a separate "Add pick" press. It
+  // also mirrors the picked location into those dropdowns, so there's
+  // visible confirmation of what was picked and it's easy to add another
+  // tire to that same spot afterward.
+  const selectFromBinMap = (code: string) => {
     if (!selectedWarehouse) return;
-    const [colStr, rowStr] = areaCode.slice(selectedWarehouse.prefix.length).split("-");
-    const shortCode = code.slice(areaCode.length + 1);
-    const match = /^([A-Za-z]+)(\d+)$/.exec(shortCode);
-    if (!colStr || !rowStr || !match) return;
+    const [colStr, rowStr] = code.slice(selectedWarehouse.prefix.length).split("-");
+    if (!colStr || !rowStr) return;
     setManualCol(String(Number(colStr)));
     setManualRow(String(Number(rowStr)));
-    setManualStand(match[1]);
-    setManualFloor(match[2]);
-    setPickerAreaCode(null);
     addPickAtLocation(code);
   };
 
@@ -187,10 +165,9 @@ export default function TireOutward() {
     selectedTires.every((t) => t.palletNo.trim()) &&
     !!selectedWarehouse &&
     !!manualCol &&
-    !!manualRow &&
-    !!manualFloor;
+    !!manualRow;
 
-  // Shared by the manual Row/Position/Stand/Floor "Add pick" button and by
+  // Shared by the manual Row/Position "Add pick" button and by
   // tapping a slot directly on the bin map — one tire selected in step 1 can
   // become several pick entries here, every selected tire type recorded
   // against the one given location, each keeping its own quantity.
@@ -219,7 +196,7 @@ export default function TireOutward() {
 
   const addPick = () => {
     if (!canAddPick || !selectedWarehouse) return;
-    const locationLabel = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}-${STAND_IDS[0]}${manualFloor}`;
+    const locationLabel = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`;
     addPickAtLocation(locationLabel);
   };
 
@@ -432,8 +409,6 @@ export default function TireOutward() {
                   setWarehouseKey(w.key);
                   setManualCol("");
                   setManualRow("");
-                  setManualStand("");
-                  setManualFloor("");
                 }}
                 className={cn(
                   "rounded-xl border px-4 py-3 text-sm font-medium transition-colors",
@@ -458,13 +433,9 @@ export default function TireOutward() {
                 options={columnOptions.map((c) => ({ value: String(c), label: String(c).padStart(2, "0") }))}
                 onChange={(col) => {
                   setManualCol(col);
-                  setManualStand("");
                   if (col && manualRow) {
                     const max = selectedWarehouse.columnRowCounts[Number(col) - 1] ?? 0;
                     if (Number(manualRow) > max) setManualRow("");
-                  }
-                  if (col && manualFloor && Number(manualFloor) > floorCountAt(selectedWarehouse, Number(col))) {
-                    setManualFloor("");
                   }
                 }}
               />
@@ -477,16 +448,6 @@ export default function TireOutward() {
                 placeholder="Select position"
                 options={rowOptions.map((r) => ({ value: String(r), label: String(r) }))}
                 onChange={setManualRow}
-              />
-            </label>
-
-            <label className="block space-y-1.5">
-              <span className="text-sm font-medium text-foreground">Select Floor</span>
-              <SelectMenu
-                value={manualFloor}
-                placeholder="Select floor"
-                options={floorOptions.map((f) => ({ value: String(f), label: `Floor ${f}` }))}
-                onChange={setManualFloor}
               />
             </label>
           </div>
@@ -542,7 +503,7 @@ export default function TireOutward() {
                           <td key={colIdx} className="p-0.5">
                             <button
                               type="button"
-                              onClick={() => setPickerAreaCode(code)}
+                              onClick={() => selectFromBinMap(code)}
                               title={code}
                               className={cn(
                                 "flex h-8 w-12 items-center justify-center rounded text-[9px] font-bold leading-none text-white transition-colors",
@@ -611,18 +572,6 @@ export default function TireOutward() {
       </button>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
-
-      {pickerAreaCode && selectedWarehouse && (
-        <StandFloorPicker
-          areaCode={pickerAreaCode}
-          standCount={standCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
-          floorCount={floorCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
-          slotCounts={{}}
-          selectedCode={currentAreaCode === pickerAreaCode ? currentFullCode : null}
-          onSelect={(code) => selectFromBinMap(pickerAreaCode, code)}
-          onClose={() => setPickerAreaCode(null)}
-        />
-      )}
 
       {scanningTire && (
         <QrScanner

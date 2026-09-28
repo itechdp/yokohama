@@ -7,10 +7,9 @@ import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
 import QtyStepper from "@/components/qty-stepper";
 import SelectMenu from "@/components/select-menu";
-import StandFloorPicker from "@/components/stand-floor-picker-svg";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
-import { binCounts, firstBin, floorCountAt, locationForBin, STAND_IDS, standCountAt, type WarehouseDef } from "@/data/warehouse-bins";
+import { binCounts, firstBin, locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertInwardReceipts } from "@/lib/inward-receipts";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
@@ -60,15 +59,12 @@ export default function TireInward() {
   const [selectedBins, setSelectedBins] = useState<Set<string>>(new Set());
   const [manualRow, setManualRow] = useState("");
   const [manualCol, setManualCol] = useState("");
-  const [manualStand, setManualStand] = useState("");
-  const [manualFloor, setManualFloor] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
 
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [exchangeOpen, setExchangeOpen] = useState(false);
-  const [pickerAreaCode, setPickerAreaCode] = useState<string | null>(null);
   const [scanningTire, setScanningTire] = useState(false);
 
   useEffect(() => {
@@ -150,19 +146,6 @@ export default function TireInward() {
     return Array.from({ length: maxRows }, (_, i) => i + 1);
   }, [selectedWarehouse, manualCol, maxRows]);
 
-  // How many stands the chosen column has — 1 means Stand is auto-picked as
-  // A with no dropdown shown, more means the operator picks which one.
-  const manualStandCount = selectedWarehouse && manualCol ? standCountAt(selectedWarehouse, Number(manualCol)) : 1;
-  const standOptions = STAND_IDS.slice(0, manualStandCount);
-  // Before a column is picked, fall back to the tallest floor count across
-  // all columns — same fallback pattern rowOptions uses via maxRows — so the
-  // Floor dropdown isn't empty while the operator is still picking Row.
-  const maxFloors = selectedWarehouse
-    ? Math.max(...selectedWarehouse.columnRowCounts.map((_, i) => floorCountAt(selectedWarehouse, i + 1)))
-    : 0;
-  const manualFloorCount = selectedWarehouse ? (manualCol ? floorCountAt(selectedWarehouse, Number(manualCol)) : maxFloors) : 0;
-  const floorOptions = useMemo(() => Array.from({ length: manualFloorCount }, (_, i) => i + 1), [manualFloorCount]);
-
   const toggleBin = (code: string) => {
     setSelectedBins((prev) => {
       const next = new Set(prev);
@@ -173,11 +156,8 @@ export default function TireInward() {
   };
 
   const addManualLocation = () => {
-    if (!selectedWarehouse || !manualRow || !manualCol || !manualFloor) return;
-    const stand = manualStandCount > 1 ? manualStand : STAND_IDS[0];
-    if (!stand) return;
-    const areaCode = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`;
-    const code = `${areaCode}-${stand}${manualFloor}`;
+    if (!selectedWarehouse || !manualRow || !manualCol) return;
+    const code = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`;
     if (selectedBins.has(code)) {
       setManualError("Location already selected");
       return;
@@ -185,8 +165,6 @@ export default function TireInward() {
     setSelectedBins((prev) => new Set(prev).add(code));
     setManualRow("");
     setManualCol("");
-    setManualStand("");
-    setManualFloor("");
     setManualError(null);
   };
 
@@ -493,8 +471,6 @@ export default function TireInward() {
                 setSelectedBins(new Set());
                 setManualRow("");
                 setManualCol("");
-                setManualStand("");
-                setManualFloor("");
                 setManualError(null);
               }}
               className={cn(
@@ -531,7 +507,6 @@ export default function TireInward() {
                   options={columnOptions.map((c) => ({ value: String(c), label: String(c).padStart(2, "0") }))}
                   onChange={(col) => {
                     setManualCol(col);
-                    setManualStand("");
                     setManualError(null);
 
                     // Validate selected row against the selected column
@@ -542,11 +517,6 @@ export default function TireInward() {
                       if (Number(manualRow) > max) {
                         setManualRow("");
                       }
-                    }
-
-                    // Validate selected floor against the new column's floor count
-                    if (col && manualFloor && Number(manualFloor) > floorCountAt(selectedWarehouse, Number(col))) {
-                      setManualFloor("");
                     }
                   }}
                 />
@@ -568,38 +538,6 @@ export default function TireInward() {
                   }}
                 />
               </label>
-
-              {/* STAND — only shown when this column has more than one stand; otherwise auto-picked as the first (X) */}
-              {manualStandCount > 1 && (
-                <label className="block space-y-1.5">
-                  <span className="text-sm font-medium text-foreground">Select Stand</span>
-
-                  <SelectMenu
-                    value={manualStand}
-                    placeholder="Select stand"
-                    options={standOptions.map((s) => ({ value: s, label: s }))}
-                    onChange={(stand) => {
-                      setManualStand(stand);
-                      setManualError(null);
-                    }}
-                  />
-                </label>
-              )}
-
-              {/* FLOOR — always required */}
-              <label className="block space-y-1.5">
-                <span className="text-sm font-medium text-foreground">Select Floor</span>
-
-                <SelectMenu
-                  value={manualFloor}
-                  placeholder="Select floor"
-                  options={floorOptions.map((f) => ({ value: String(f), label: `Floor ${f}` }))}
-                  onChange={(floor) => {
-                    setManualFloor(floor);
-                    setManualError(null);
-                  }}
-                />
-              </label>
             </div>
 
             {manualError && (
@@ -611,7 +549,7 @@ export default function TireInward() {
             <button
               type="button"
               onClick={addManualLocation}
-              disabled={!manualCol || !manualRow || !manualFloor || (manualStandCount > 1 && !manualStand)}
+              disabled={!manualCol || !manualRow}
               className="w-full sm:w-auto rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Add Location
@@ -680,13 +618,14 @@ export default function TireInward() {
                           if (row > maxRow) return <td key={colIdx} />;
                           const col = colIdx + 1;
                           const code = `${selectedWarehouse.prefix}${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`;
-                          const hasPick = Array.from(selectedBins).some((b) => b.startsWith(`${code}-`));
+                          const hasPick = selectedBins.has(code);
+                          const count = counts.get(code) ?? 0;
                           return (
                             <td key={colIdx} className="p-0.5">
                               <button
                                 type="button"
-                                onClick={() => setPickerAreaCode(code)}
-                                title={code}
+                                onClick={() => toggleBin(code)}
+                                title={count > 0 ? `${code} — ${count} tire${count === 1 ? "" : "s"}` : `${code} — empty`}
                                 className={cn(
                                   "flex h-8 w-12 items-center justify-center rounded text-[9px] font-bold leading-none text-white transition-colors",
                                   !hasPick && "bg-info/70 hover:bg-info",
@@ -734,24 +673,6 @@ export default function TireInward() {
         }}
       />
 
-      {pickerAreaCode && selectedWarehouse && (
-        <StandFloorPicker
-          areaCode={pickerAreaCode}
-          standCount={standCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
-          floorCount={floorCountAt(selectedWarehouse, Number(pickerAreaCode.slice(selectedWarehouse.prefix.length).split("-")[0]))}
-          slotCounts={Object.fromEntries(
-            Array.from(counts.entries())
-              .filter(([bin]) => bin.startsWith(`${pickerAreaCode}-`))
-              .map(([bin, n]) => [bin.slice(pickerAreaCode.length + 1), n]),
-          )}
-          selectedCode={Array.from(selectedBins).find((b) => b.startsWith(`${pickerAreaCode}-`)) ?? null}
-          onSelect={(code) => {
-            toggleBin(code);
-            setPickerAreaCode(null);
-          }}
-          onClose={() => setPickerAreaCode(null)}
-        />
-      )}
 
       {scanningTire && (
         <QrScanner

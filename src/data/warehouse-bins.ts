@@ -8,58 +8,19 @@ export interface WarehouseDef {
   label: string;
   prefix: string;
   columnRowCounts: number[]; // index 0 = column 01, value = max row number in that column
-  // Optional per-column stand count: how many stands (X, Y, Z, then A, B,
-  // C, ... — see STAND_IDS) the picker shows for every area in that column. Applies
-  // uniformly to every row/area in the column, same as columnRowCounts.
-  // Missing entries, or a missing array entirely, default to 1 stand.
-  columnStandCounts?: number[];
-  // Optional per-column floor count: how many floors the picker shows for
-  // every stand in that column. Missing entries, or a missing array
-  // entirely, default to FLOOR_COUNT.
-  columnFloorCounts?: number[];
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-// Stand letters — X, Y, Z first, then A, B, C, ... — no fixed cap, same as
-// floors. 26 covers any realistic physical layout; extend here if a
-// warehouse ever needs more.
-export const STAND_IDS: string[] = [
-  "X",
-  "Y",
-  "Z",
-  ...Array.from({ length: 23 }, (_, i) => String.fromCharCode(65 + i)), // A..W
-];
-// Default floor count for a column that hasn't configured its own.
-export const FLOOR_COUNT = 6;
-
-// Stand count of an area's column — how many stands the picker shows.
-export function standCountAt(warehouse: WarehouseDef, col: number): number {
-  return warehouse.columnStandCounts?.[col - 1] ?? 1;
-}
-
-// Floor count of an area's column — how many floors the picker shows.
-export function floorCountAt(warehouse: WarehouseDef, col: number): number {
-  return warehouse.columnFloorCounts?.[col - 1] ?? FLOOR_COUNT;
-}
-
-// Every real, placeable bin in the warehouse — one per (area, stand, floor),
-// using however many stands that area's column is configured for. An area
-// code alone is never a placeable bin by itself; a tire always sits at a
-// specific stand+floor within it.
+// Every real, placeable bin in the warehouse — one per (column, row), e.g.
+// "Z01-02". The bin code is the area code itself; there are no stands or
+// floors within it.
 export function binsForWarehouse(warehouse: WarehouseDef): string[] {
   const bins: string[] = [];
   warehouse.columnRowCounts.forEach((maxRow, colIndex) => {
     const col = colIndex + 1;
-    const standCount = standCountAt(warehouse, col);
-    const floorCount = floorCountAt(warehouse, col);
     for (let row = 1; row <= maxRow; row++) {
-      const areaCode = `${warehouse.prefix}${pad2(col)}-${pad2(row)}`;
-      for (const standId of STAND_IDS.slice(0, standCount)) {
-        for (let floor = 1; floor <= floorCount; floor++) {
-          bins.push(`${areaCode}-${standId}${floor}`);
-        }
-      }
+      bins.push(`${warehouse.prefix}${pad2(col)}-${pad2(row)}`);
     }
   });
   return bins;

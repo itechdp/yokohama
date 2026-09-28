@@ -17,14 +17,6 @@ import { fetchTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { Tire } from "@/types/tire";
 
-// Everything after the area code (prefix+col+row) in a bin string is the
-// stand+floor suffix, e.g. "X3" -> stand X, floor 3. Stock ignores both when
-// matching, but the floor half is still worth showing in the results table.
-function floorFromBinSuffix(suffix: string): string | null {
-  const match = /^[A-Z]+(\d+)$/.exec(suffix);
-  return match ? match[1] : null;
-}
-
 // Same area-code shape the search filter matches against — shared here so
 // "which rows/positions have stock" and "does this tire match the search"
 // can never disagree.
@@ -45,69 +37,52 @@ async function fetchTiresAtLocation(warehouse: WarehouseDef, col: string, row: s
   });
 }
 
-// Every distinct area code (col+row, stand/floor stripped off) that
-// currently holds at least one warehouse-stage tire in this warehouse —
-// the source of truth for which Row/Position dropdown entries to show.
+// The area code (prefix+col-row) a bin sits in. A bin is the area code
+// itself ("Z01-01"); older bins also carry a stand/floor suffix
+// ("Z01-01-X3"), which is ignored here.
+function areaCodeOfBin(warehouse: WarehouseDef, bin: string): string | null {
+  const [colStr, rowStr] = bin.slice(warehouse.prefix.length).split("-");
+  return colStr && rowStr ? `${warehouse.prefix}${colStr}-${rowStr}` : null;
+}
+
+// Every distinct area code (col+row) that currently holds at least one
+// warehouse-stage tire in this warehouse — the source of truth for which
+// Row/Position dropdown entries to show.
 function areaCodesInWarehouse(warehouse: WarehouseDef, tires: Tire[]): Set<string> {
   const codes = new Set<string>();
   for (const t of tires) {
     if (t.currentStage !== "warehouse") continue;
     const bin = binForLocation(warehouse, t.location);
     if (!bin) continue;
-    const lastDash = bin.lastIndexOf("-");
-    if (lastDash > 0) codes.add(bin.slice(0, lastDash));
+    const areaCode = areaCodeOfBin(warehouse, bin);
+    if (areaCode) codes.add(areaCode);
   }
   return codes;
 }
 
-// Informational only (see requirement #16) — the floor a tire sits on
-// within the searched area code, read back out of its bin string.
-function floorForTire(
-  warehouse: WarehouseDef | null,
-  location: { col: string; row: string },
-  tire: Tire,
-): string | null {
-  if (!warehouse) return null;
-  const bin = binForLocation(warehouse, tire.location);
-  const areaCode = `${warehouse.prefix}${location.col}-${String(location.row).padStart(2, "0")}`;
-  const suffix = bin && bin.length > areaCode.length ? bin.slice(areaCode.length + 1) : "";
-  return suffix ? floorFromBinSuffix(suffix) : null;
-}
-
 // One row per Serial No. — Quantity is the actual count of matching tyre
-// records for that serial, not a stored/hardcoded value. Floor is carried
-// along for display only; it is never part of the grouping key, so tyres of
-// the same serial on different floors still collapse into one row (their
-// floors are shown together rather than silently dropped).
+// records for that serial, not a stored/hardcoded value.
 interface StockGroup {
   serialNumber: string;
   brand: string;
   model: string;
-  floor: string;
   quantity: number;
 }
 
-function groupResultsBySerial(
-  results: Tire[],
-  warehouse: WarehouseDef | null,
-  location: { col: string; row: string },
-): StockGroup[] {
-  const groups = new Map<string, { brand: string; model: string; floors: Set<string>; quantity: number }>();
+function groupResultsBySerial(results: Tire[]): StockGroup[] {
+  const groups = new Map<string, { brand: string; model: string; quantity: number }>();
   for (const t of results) {
-    const floor = floorForTire(warehouse, location, t) ?? "—";
     const existing = groups.get(t.serialNumber);
     if (existing) {
       existing.quantity += 1;
-      existing.floors.add(floor);
     } else {
-      groups.set(t.serialNumber, { brand: t.brand || "—", model: t.model, floors: new Set([floor]), quantity: 1 });
+      groups.set(t.serialNumber, { brand: t.brand || "—", model: t.model, quantity: 1 });
     }
   }
   return Array.from(groups.entries()).map(([serialNumber, g]) => ({
     serialNumber,
     brand: g.brand,
     model: g.model,
-    floor: Array.from(g.floors).join(", "),
     quantity: g.quantity,
   }));
 }
@@ -119,28 +94,21 @@ function groupResultsBySerial(
 function buildGlobalExportRows(tires: Tire[], warehouses: WarehouseDef[]): StockExportRow[] {
   const groups = new Map<
     string,
-    { serialNumber: string; brand: string; model: string; warehouse: string; row: string; position: string; floors: Set<string>; quantity: number }
+    { serialNumber: string; brand: string; model: string; warehouse: string; row: string; position: string; quantity: number }
   >();
   for (const t of tires) {
     if (t.currentStage !== "warehouse") continue;
     for (const warehouse of warehouses) {
       const bin = binForLocation(warehouse, t.location);
       if (!bin) continue;
-      const lastDash = bin.lastIndexOf("-");
-      if (lastDash <= 0) continue;
-      const areaCode = bin.slice(0, lastDash);
-      const suffix = bin.slice(lastDash + 1);
-      const rest = areaCode.slice(warehouse.prefix.length); // "<col2>-<row2>"
-      const [colStr, rowStr] = rest.split("-");
+      const [colStr, rowStr] = bin.slice(warehouse.prefix.length).split("-"); // "<col2>-<row2>"
       if (!colStr || !rowStr) continue;
       const uiRow = colStr;
       const uiPosition = String(Number(rowStr));
-      const floor = floorFromBinSuffix(suffix) ?? "—";
       const key = `${warehouse.label}|${uiRow}|${uiPosition}|${t.serialNumber}`;
       const existing = groups.get(key);
       if (existing) {
         existing.quantity += 1;
-        existing.floors.add(floor);
       } else {
         groups.set(key, {
           serialNumber: t.serialNumber,
@@ -149,7 +117,6 @@ function buildGlobalExportRows(tires: Tire[], warehouses: WarehouseDef[]): Stock
           warehouse: warehouse.label,
           row: uiRow,
           position: uiPosition,
-          floors: new Set([floor]),
           quantity: 1,
         });
       }
@@ -163,7 +130,6 @@ function buildGlobalExportRows(tires: Tire[], warehouses: WarehouseDef[]): Stock
     warehouse: g.warehouse,
     row: g.row,
     position: g.position,
-    floor: Array.from(g.floors).join(", "),
     quantity: g.quantity,
   }));
 }
@@ -240,8 +206,8 @@ export default function TireStock() {
   // Same raw matches the search already found (Warehouse + Row + Position,
   // untouched) — only grouped by Serial No. for display, one row per serial.
   const groupedResults = useMemo(
-    () => (results && searchedLocation ? groupResultsBySerial(results, selectedWarehouse, searchedLocation) : []),
-    [results, searchedLocation, selectedWarehouse],
+    () => (results && searchedLocation ? groupResultsBySerial(results) : []),
+    [results, searchedLocation],
   );
 
   const clearResults = () => {
@@ -336,7 +302,7 @@ export default function TireStock() {
     try {
       const paddedCol = String(col).padStart(2, "0");
       const matches = await fetchTiresAtLocation(selectedWarehouse, col, row);
-      const grouped = groupResultsBySerial(matches, selectedWarehouse, { col: paddedCol, row: String(row) });
+      const grouped = groupResultsBySerial(matches);
       if (grouped.length === 0) {
         setLocationExportError("No tyres available at this location.");
         return;
@@ -348,7 +314,6 @@ export default function TireStock() {
         warehouse: selectedWarehouse.label,
         row: paddedCol,
         position: String(row),
-        floor: g.floor,
         quantity: g.quantity,
       }));
       const filenameBase = `stock-${sanitizeForFilename(selectedWarehouse.label)}-row-${paddedCol}-position-${row}`;
@@ -552,7 +517,6 @@ export default function TireStock() {
                       </span>
                     </div>
                     <p className="text-sm text-foreground">{g.model}</p>
-                    <p className="text-xs text-muted-foreground">Floor {g.floor}</p>
                   </div>
                 ))}
               </div>
@@ -565,7 +529,6 @@ export default function TireStock() {
                       <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Serial No.</th>
                       <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Brand</th>
                       <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Model</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Floor</th>
                       <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Quantity</th>
                     </tr>
                   </thead>
@@ -575,7 +538,6 @@ export default function TireStock() {
                         <td className="px-3 py-2 font-medium text-foreground whitespace-nowrap">{g.serialNumber}</td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{g.brand}</td>
                         <td className="px-3 py-2 text-foreground whitespace-nowrap">{g.model}</td>
-                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{g.floor}</td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{g.quantity}</td>
                       </tr>
                     ))}
