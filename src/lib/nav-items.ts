@@ -6,7 +6,6 @@ import {
   List,
   PackageMinus,
   PackageSearch,
-  Truck,
   Warehouse,
   type LucideIcon,
 } from "lucide-react";
@@ -26,7 +25,6 @@ export const FEATURE_ITEMS: NavItem[] = [
   { to: "/tires/outward", label: "Outward", icon: PackageMinus },
   { to: "/tires/stock", label: "Stock", icon: PackageSearch },
   { to: "/tires/skus", label: "Show tire", icon: List },
-  { to: "/tires/dispatch", label: "Dispatch", icon: Truck },
   { to: "/tires/history", label: "History", icon: History },
   { to: "/bays", label: "Loading Bay", icon: LayoutGrid },
   { to: "/bays/history", label: "Bay History", icon: History },

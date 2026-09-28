@@ -294,7 +294,7 @@ export default function TireOutward() {
       return;
     }
 
-    // 2. Per-tire movement history, same as Dispatch writes.
+    // 2. Per-tire movement history.
     const history: StageHistory[] = outgoing.map((t, idx) => ({
       id: `h-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
       tireId: t.id,

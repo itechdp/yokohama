@@ -8,18 +8,6 @@ export type TireStage =
   | "retread"
   | "scrapped";
 
-export type DispatchStatus =
-  | "holding-bay"
-  | "loading"
-  | "picked-up"
-  | "loaded"
-  | "in-transit"
-  | "at-hub"
-  | "out-for-delivery"
-  | "delivered"
-  | "delayed"
-  | "returned";
-
 export interface Tire {
   id: string;
   serialNumber: string;
@@ -119,44 +107,6 @@ export interface InwardReceipt {
   notes: string;
 }
 
-export interface TireDispatch {
-  id: string;
-  tireId: string;
-  planId?: string;
-  driverName: string;
-  destination: string;
-  dispatchedAt: string;
-  dispatchedBy: string;
-  status: DispatchStatus;
-  notes: string;
-}
-
-// One truck/destination/driver. Tyres get added to a plan, each tracked
-// individually (Holding in Bay -> Loading onto Truck -> Loaded onto Truck)
-// before the truck itself is marked dispatched.
-export interface DispatchPlan {
-  id: string;
-  driverName: string;
-  destination: string;
-  truckNumber: string;
-  createdAt: string;
-  createdBy: string;
-  notes: string;
-  status: "open" | "dispatched";
-  dispatchedAt?: string;
-}
-
-export interface ShipmentTrackingUpdate {
-  id: string;
-  dispatchId: string;
-  tireId: string;
-  status: DispatchStatus;
-  location: string;
-  updatedAt: string;
-  updatedBy: string;
-  notes: string;
-}
-
 
 export const STAGE_LABELS: Record<TireStage, string> = {
   production: "Production",
@@ -190,30 +140,6 @@ export const NEXT_STAGE: Record<TireStage, TireStage | null> = {
   retread: "scrapped",
   scrapped: null,
 };
-
-export const DISPATCH_STATUS_LABELS: Record<DispatchStatus, string> = {
-  "holding-bay": "Holding in Bay",
-  loading: "Loading onto Truck",
-  loaded: "Loaded onto Truck",
-  "picked-up": "Picked up",
-  "in-transit": "In transit",
-  "at-hub": "At hub",
-  "out-for-delivery": "Out for delivery",
-  delivered: "Delivered",
-  delayed: "Delayed",
-  returned: "Returned",
-};
-
-export const DISPATCH_STATUS_ORDER: DispatchStatus[] = [
-  "holding-bay",
-  "loading",
-  "loaded",
-  "picked-up",
-  "in-transit",
-  "at-hub",
-  "out-for-delivery",
-  "delivered",
-];
 
 export type BayStatus = "closed" | "running" | "hold" | "qc-pending";
 
@@ -259,16 +185,3 @@ export interface BayHistorySession {
   openedAt: string;
   closedAt: string | null;
 }
-
-export const DELIVERY_PROGRESS: Record<DispatchStatus, number> = {
-  "holding-bay": 5,
-  loading: 12,
-  loaded: 20,
-  "picked-up": 30,
-  "in-transit": 50,
-  "at-hub": 65,
-  "out-for-delivery": 85,
-  delivered: 100,
-  delayed: 0,
-  returned: 0,
-};
