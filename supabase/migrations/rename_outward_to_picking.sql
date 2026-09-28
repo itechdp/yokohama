@@ -39,10 +39,22 @@ create policy "picks_anon_all"
   with check (true);
 
 -- 2. plan_numbers.kind 'outward' -> 'picking'
+-- Some databases have an older plan_numbers table from before `kind`
+-- existed (create table if not exists never adds it afterwards), so add it
+-- first. Older rows had no kind; they're treated as Inward. Only today's
+-- rows ever show in the dropdown, so this doesn't affect anything in use.
+alter table public.plan_numbers add column if not exists kind text not null default 'inward';
+alter table public.plan_numbers alter column kind drop default;
+
 alter table public.plan_numbers drop constraint if exists plan_numbers_kind_check;
 update public.plan_numbers set kind = 'picking' where kind = 'outward';
 alter table public.plan_numbers
   add constraint plan_numbers_kind_check check (kind in ('inward', 'picking'));
+
+-- Inward and Picking each keep their own pool of plan numbers, so the same
+-- plan no can exist once per kind — the app upserts on (plan_no, kind).
+alter table public.plan_numbers drop constraint if exists plan_numbers_pkey;
+alter table public.plan_numbers add constraint plan_numbers_pkey primary key (plan_no, kind);
 
 commit;
 
