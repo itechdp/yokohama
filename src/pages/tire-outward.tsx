@@ -118,29 +118,6 @@ export default function TireOutward() {
     return Array.from({ length: maxRows }, (_, i) => i + 1);
   }, [selectedWarehouse, manualCol, maxRows]);
 
-  // The area code (prefix+col-row) the current manual selection points at, if
-  // both Row and Position are picked — used to highlight the matching cell
-  // in the bin map below.
-  const currentAreaCode =
-    selectedWarehouse && manualCol && manualRow
-      ? `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`
-      : null;
-
-  // Tapping a cell on the bin map commits the pick immediately — same
-  // one-tap behavior as Inward's map — instead of just filling in the
-  // Row/Position dropdowns and waiting for a separate "Add pick" press. It
-  // also mirrors the picked location into those dropdowns, so there's
-  // visible confirmation of what was picked and it's easy to add another
-  // tire to that same spot afterward.
-  const selectFromBinMap = (code: string) => {
-    if (!selectedWarehouse) return;
-    const [colStr, rowStr] = code.slice(selectedWarehouse.prefix.length).split("-");
-    if (!colStr || !rowStr) return;
-    setManualCol(String(Number(colStr)));
-    setManualRow(String(Number(rowStr)));
-    addPickAtLocation(code);
-  };
-
   const addSelectedTire = (entry: { material: string; description: string; brand?: string; plyRatingBottom?: string }) => {
     setSelectedTires((prev) => {
       if (prev.some((t) => t.material === entry.material)) return prev;
@@ -167,9 +144,8 @@ export default function TireOutward() {
     !!manualCol &&
     !!manualRow;
 
-  // Shared by the manual Row/Position "Add pick" button and by
-  // tapping a slot directly on the bin map — one tire selected in step 1 can
-  // become several pick entries here, every selected tire type recorded
+  // Used by the Row/Position "Add pick" button — one tire selected in step 1
+  // can become several pick entries here, every selected tire type recorded
   // against the one given location, each keeping its own quantity.
   const addPickAtLocation = (locationLabel: string) => {
     if (selectedTires.length === 0 || !selectedWarehouse) return;
@@ -187,9 +163,9 @@ export default function TireOutward() {
         palletNo: t.palletNo,
       })),
     ]);
-    // Tire selection is kept as-is — picking a location (button or map tap)
-    // no longer clears it, so the same tire(s) stay selected and the map
-    // stays open for picking another location, right up until Confirm.
+    // Tire selection is kept as-is — picking a location no longer clears it,
+    // so the same tire(s) stay selected for picking another location, right
+    // up until Confirm.
     // Operators remove a tire from the selection manually (the X button) if
     // they're done with it before then.
   };
@@ -464,71 +440,9 @@ export default function TireOutward() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">4. Storage bins</h2>
-        {!selectedWarehouse ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
-            Choose a warehouse first.
-          </div>
-        ) : selectedTires.length === 0 ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
-            Select a tire above, then tap a spot on the map to pick it from there.
-          </div>
-        ) : (
-          <div className="overflow-auto max-h-96 rounded-xl border border-border">
-            <table className="border-collapse text-xs">
-              <thead className="sticky top-0 z-10 bg-card">
-                <tr>
-                  <th className="sticky left-0 z-20 w-8 bg-card" />
-                  {selectedWarehouse.columnRowCounts.map((_, colIdx) => (
-                    <th key={colIdx} className="px-1 py-1 text-center font-medium text-muted-foreground">
-                      {String(colIdx + 1).padStart(2, "0")}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: maxRows }, (_, rowIdx) => {
-                  const row = rowIdx + 1;
-                  return (
-                    <tr key={row}>
-                      <td className="sticky left-0 z-10 bg-card px-1 py-1 text-center text-muted-foreground">
-                        {row}
-                      </td>
-                      {selectedWarehouse.columnRowCounts.map((maxRow, colIdx) => {
-                        if (row > maxRow) return <td key={colIdx} />;
-                        const col = colIdx + 1;
-                        const code = `${selectedWarehouse.prefix}${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`;
-                        const hasPick = currentAreaCode === code;
-                        return (
-                          <td key={colIdx} className="p-0.5">
-                            <button
-                              type="button"
-                              onClick={() => selectFromBinMap(code)}
-                              title={code}
-                              className={cn(
-                                "flex h-8 w-12 items-center justify-center rounded text-[9px] font-bold leading-none text-white transition-colors",
-                                !hasPick && "bg-info/70 hover:bg-info",
-                                hasPick && "bg-success ring-2 ring-success ring-offset-1",
-                              )}
-                            >
-                              {String(col).padStart(2, "0")}-{String(row).padStart(2, "0")}
-                            </button>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
           <MapPin className="size-4 text-muted-foreground" />
-          5. Picks to record
+          4. Picks to record
         </h2>
         {pickEntries.length === 0 ? (
           <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
@@ -538,17 +452,16 @@ export default function TireOutward() {
           <>
             <ul className="space-y-2 max-h-72 overflow-y-auto">
               {pickEntries.map((p) => (
-                <li key={p.key} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm">
-                  <div className="min-w-0">
-                    <p className="font-medium text-foreground truncate">{p.description}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {p.material} · {p.warehouseLabel} · {p.locationLabel} · Qty {p.qty} · Pallet {p.palletNo}
-                    </p>
-                  </div>
+                <li key={p.key} className="relative rounded-xl border border-success/30 bg-success/10 px-10 py-3 text-sm text-center space-y-1">
+                  <p className="text-lg font-semibold tracking-wide text-success">{p.locationLabel}</p>
+                  <p className="font-medium text-foreground truncate">{p.description}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {p.material} · {p.warehouseLabel} · Qty {p.qty} · Pallet {p.palletNo}
+                  </p>
                   <button
                     type="button"
                     onClick={() => removePick(p.key)}
-                    className="shrink-0 text-muted-foreground hover:text-danger"
+                    className="absolute right-2 top-2 rounded-lg p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger"
                     aria-label={`Remove pick of ${p.description}`}
                   >
                     <X className="size-4" />

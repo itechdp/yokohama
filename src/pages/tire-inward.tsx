@@ -9,7 +9,7 @@ import QtyStepper from "@/components/qty-stepper";
 import SelectMenu from "@/components/select-menu";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
-import { binCounts, firstBin, locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
+import { firstBin, locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertInwardReceipts } from "@/lib/inward-receipts";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
@@ -126,10 +126,6 @@ export default function TireInward() {
   const totalQty = selectedTires.reduce((sum, t) => sum + t.qty, 0);
 
   const selectedWarehouse = warehouses.find((w) => w.key === warehouseKey) || null;
-  const counts = useMemo(
-    () => (selectedWarehouse ? binCounts(selectedWarehouse, tires) : new Map<string, number>()),
-    [selectedWarehouse, tires],
-  );
   const maxRows = selectedWarehouse ? Math.max(...selectedWarehouse.columnRowCounts) : 0;
 
   const columnOptions = useMemo(
@@ -555,95 +551,33 @@ export default function TireInward() {
               Add Location
             </button>
 
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <p className="text-sm font-medium text-foreground">Selected locations</p>
               {selectedBins.size === 0 ? (
-                <p className="text-xs text-muted-foreground">No locations selected yet.</p>
+                <p className="text-sm text-muted-foreground">No locations selected yet.</p>
               ) : (
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-2">
                   {Array.from(selectedBins)
                     .sort()
                     .map((code) => (
-                      <span
+                      <div
                         key={code}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-xs font-medium text-success"
+                        className="relative flex items-center justify-center rounded-xl border border-success/30 bg-success/10 px-10 py-3"
                       >
-                        {code}
+                        <span className="text-lg font-semibold tracking-wide text-success">{code}</span>
                         <button
                           type="button"
                           onClick={() => toggleBin(code)}
                           aria-label={`Remove ${code}`}
-                          className="text-success hover:text-danger"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger"
                         >
-                          <X className="size-3" />
+                          <X className="size-4" />
                         </button>
-                      </span>
+                      </div>
                     ))}
                 </div>
               )}
             </div>
-          </>
-        )}
-      </div>
-
-      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <h2 className="text-base font-medium text-foreground">5. Storage bins</h2>
-        {!selectedWarehouse ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
-            Choose a warehouse first.
-          </div>
-        ) : (
-          <>
-            <div className="overflow-auto max-h-96 rounded-xl border border-border">
-              <table className="border-collapse text-xs">
-                <thead className="sticky top-0 z-10 bg-card">
-                  <tr>
-                    <th className="sticky left-0 z-20 w-8 bg-card" />
-                    {selectedWarehouse.columnRowCounts.map((_, colIdx) => (
-                      <th key={colIdx} className="px-1 py-1 text-center font-medium text-muted-foreground">
-                        {String(colIdx + 1).padStart(2, "0")}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: maxRows }, (_, rowIdx) => {
-                    const row = rowIdx + 1;
-                    return (
-                      <tr key={row}>
-                        <td className="sticky left-0 z-10 bg-card px-1 py-1 text-center text-muted-foreground">
-                          {row}
-                        </td>
-                        {selectedWarehouse.columnRowCounts.map((maxRow, colIdx) => {
-                          if (row > maxRow) return <td key={colIdx} />;
-                          const col = colIdx + 1;
-                          const code = `${selectedWarehouse.prefix}${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`;
-                          const hasPick = selectedBins.has(code);
-                          const count = counts.get(code) ?? 0;
-                          return (
-                            <td key={colIdx} className="p-0.5">
-                              <button
-                                type="button"
-                                onClick={() => toggleBin(code)}
-                                title={count > 0 ? `${code} — ${count} tire${count === 1 ? "" : "s"}` : `${code} — empty`}
-                                className={cn(
-                                  "flex h-8 w-12 items-center justify-center rounded text-[9px] font-bold leading-none text-white transition-colors",
-                                  !hasPick && "bg-info/70 hover:bg-info",
-                                  hasPick && "bg-success ring-2 ring-success ring-offset-1",
-                                )}
-                              >
-                                {String(col).padStart(2, "0")}-{String(row).padStart(2, "0")}
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
           </>
         )}
       </div>
