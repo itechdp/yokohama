@@ -11,6 +11,7 @@ import TireCatalogSearch from "@/components/tire-catalog-search";
 import { locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
 import { stockByRowPosition, stockInWarehouse, useStockLocations, type StockMap } from "@/hooks/use-stock-locations";
 import { fetchOngoingPickingPlans, insertPicks, type OngoingPickingPlan } from "@/lib/picks";
+import { takeOutOfStock } from "@/lib/stock-out";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
 import { touchPlanNumber } from "@/lib/plan-numbers";
 import { fetchTireBySkuQrCode } from "@/lib/tires";
@@ -18,10 +19,11 @@ import { fetchWarehouses } from "@/lib/warehouses";
 import type { TireSkuRow } from "@/lib/supabase";
 import type { PickingRecord } from "@/types/tire";
 
+// Confirming a pick takes the tires out of stock (see takeOutOfStock), same
+// as Outward, so Stock drops by exactly what was picked.
+
 // A tire type selected for this pick batch, with its own quantity — mirrors
-// Inward's SelectedTire exactly, right down to the per-tire qty stepper. No
-// tie to any tires-table row; this is purely "what, how many" as reported by
-// the picker, same as Inward reports "what, how many" on arrival.
+// Inward's SelectedTire exactly, right down to the per-tire qty stepper.
 interface SelectedTire {
   key: string;
   material: string;
@@ -41,6 +43,8 @@ interface PickEntry {
   plyRatingBottom?: string;
   warehouseLabel: string;
   locationLabel: string;
+  // Full tires.location this pick takes stock from — "<label> - Bin <code>".
+  stockLocation: string;
   qty: number;
   palletNo: string;
 }
@@ -89,6 +93,8 @@ export default function TirePicking() {
 
   const [pickEntries, setPickEntries] = useState<PickEntry[]>([]);
   const [scanningTire, setScanningTire] = useState(false);
+  // Bumped after every confirm so stock counts refresh.
+  const [stockVersion, setStockVersion] = useState(0);
 
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -104,51 +110,43 @@ export default function TirePicking() {
 
   const selectedWarehouse = warehouses.find((w) => w.key === warehouseKey) || null;
 
-  // Where the selected tires currently sit in stock. Once known, Warehouse /
-  // Row / Position only offer places that actually hold them (with counts).
-  // A tire not recorded in stock anywhere falls back to every Row/Position,
-  // since a pick doesn't change stock.
+  // Where the selected tires currently sit in stock. Warehouse / Row /
+  // Position only offer places that actually hold them, with counts —
+  // confirming a pick takes the tires out of stock, so it can only pick what
+  // is really there.
   const materials = useMemo(() => selectedTires.map((t) => t.material), [selectedTires]);
-  const { stock, loading: stockLoading } = useStockLocations(materials);
-  const useStockOptions = selectedTires.length > 0 && !stockLoading && stock.size > 0;
+  const { stock, loading: stockLoading } = useStockLocations(materials, stockVersion);
+  const hasStock = selectedTires.length > 0 && !stockLoading && stock.size > 0;
   const stockGrid = useMemo(
     () => (selectedWarehouse ? stockByRowPosition(selectedWarehouse, stock) : new Map<number, Map<number, number>>()),
     [selectedWarehouse, stock],
   );
 
-  const columnOptions = useMemo(() => {
-    if (!selectedWarehouse) return [];
-    if (useStockOptions) {
-      return [...stockGrid.entries()]
+  const columnOptions = useMemo(
+    () =>
+      [...stockGrid.entries()]
         .sort(([a], [b]) => a - b)
         .map(([col, rows]) => {
           const total = [...rows.values()].reduce((sum, n) => sum + n, 0);
           return { value: String(col), label: `${String(col).padStart(2, "0")} · ${total} in stock` };
-        });
-    }
-    return selectedWarehouse.columnRowCounts.map((_, i) => ({ value: String(i + 1), label: String(i + 1).padStart(2, "0") }));
-  }, [selectedWarehouse, useStockOptions, stockGrid]);
+        }),
+    [stockGrid],
+  );
 
-  const maxRows = selectedWarehouse ? Math.max(...selectedWarehouse.columnRowCounts) : 0;
   const rowOptions = useMemo(() => {
-    if (!selectedWarehouse) return [];
-    if (useStockOptions) {
-      const rows = stockGrid.get(Number(manualCol));
-      if (!rows) return [];
-      return [...rows.entries()]
-        .sort(([a], [b]) => a - b)
-        .map(([row, n]) => ({ value: String(row), label: `${row} · ${n} in stock` }));
-    }
-    const max = manualCol ? (selectedWarehouse.columnRowCounts[Number(manualCol) - 1] ?? 0) : maxRows;
-    return Array.from({ length: max }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }));
-  }, [selectedWarehouse, useStockOptions, stockGrid, manualCol, maxRows]);
+    const rows = stockGrid.get(Number(manualCol));
+    if (!rows) return [];
+    return [...rows.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([row, n]) => ({ value: String(row), label: `${row} · ${n} in stock` }));
+  }, [stockGrid, manualCol]);
 
   // Follow the stock: switch to a warehouse that holds the selected tires
   // (once per stock lookup, so tapping another warehouse afterwards sticks),
   // and fill in Row / Position when there's only one choice left.
   const followedStock = useRef<StockMap | null>(null);
   useEffect(() => {
-    if (!useStockOptions || !selectedWarehouse || followedStock.current === stock) return;
+    if (!hasStock || !selectedWarehouse || followedStock.current === stock) return;
     followedStock.current = stock;
     if (stockInWarehouse(selectedWarehouse, stock) > 0) return;
     const withStock = warehouses.find((w) => stockInWarehouse(w, stock) > 0);
@@ -157,23 +155,30 @@ export default function TirePicking() {
       setManualCol("");
       setManualRow("");
     }
-  }, [useStockOptions, selectedWarehouse, warehouses, stock]);
+  }, [hasStock, selectedWarehouse, warehouses, stock]);
   useEffect(() => {
-    if (!useStockOptions || columnOptions.some((o) => o.value === manualCol)) return;
+    if (stockLoading || columnOptions.some((o) => o.value === manualCol)) return;
     setManualCol(columnOptions.length === 1 ? columnOptions[0].value : "");
-  }, [useStockOptions, columnOptions, manualCol]);
+  }, [stockLoading, columnOptions, manualCol]);
   useEffect(() => {
-    if (!useStockOptions || !manualCol || rowOptions.some((o) => o.value === manualRow)) return;
+    if (stockLoading || rowOptions.some((o) => o.value === manualRow)) return;
     setManualRow(rowOptions.length === 1 ? rowOptions[0].value : "");
-  }, [useStockOptions, rowOptions, manualCol, manualRow]);
+  }, [stockLoading, rowOptions, manualRow]);
 
-  const currentLocation =
+  // The chosen Row/Position as a bin code and as the full tires.location.
+  const currentCode =
     selectedWarehouse && manualCol && manualRow
-      ? locationForBin(
-          selectedWarehouse,
-          `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`,
-        )
+      ? `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`
       : null;
+  const currentLocation = selectedWarehouse && currentCode ? locationForBin(selectedWarehouse, currentCode) : null;
+
+  // Already queued below for this Material + location — not yet out of the
+  // database, but no longer available to add again.
+  const queuedAt = (material: string, location: string) =>
+    pickEntries.filter((p) => p.material === material && p.stockLocation === location).reduce((sum, p) => sum + p.qty, 0);
+
+  const availableAt = (material: string, location: string): number =>
+    Math.max(0, (stock.get(location)?.get(material) ?? 0) - queuedAt(material, location));
 
   const addSelectedTire = (entry: { material: string; description: string; brand?: string; plyRatingBottom?: string }) => {
     setSelectedTires((prev) => {
@@ -194,18 +199,24 @@ export default function TirePicking() {
     setSelectedTires((prev) => prev.map((t) => (t.key === key ? { ...t, palletNo: value } : t)));
   };
 
+  // Every selected tire must have enough stock left at the chosen location.
+  const shortages =
+    currentLocation && !stockLoading ? selectedTires.filter((t) => t.qty > availableAt(t.material, currentLocation)) : [];
+
   const canAddPick =
     selectedTires.length > 0 &&
     selectedTires.every((t) => t.palletNo.trim()) &&
     !!selectedWarehouse &&
-    !!manualCol &&
-    !!manualRow;
+    !!currentCode &&
+    !!currentLocation &&
+    !stockLoading &&
+    shortages.length === 0;
 
   // Used by the Row/Position "Add pick" button — one tire selected in step 1
   // can become several pick entries here, every selected tire type recorded
   // against the one given location, each keeping its own quantity.
-  const addPickAtLocation = (locationLabel: string) => {
-    if (selectedTires.length === 0 || !selectedWarehouse) return;
+  const addPick = () => {
+    if (!canAddPick || !selectedWarehouse || !currentCode || !currentLocation) return;
     setPickEntries((prev) => [
       ...prev,
       ...selectedTires.map((t) => ({
@@ -215,7 +226,8 @@ export default function TirePicking() {
         brand: t.brand,
         plyRatingBottom: t.plyRatingBottom,
         warehouseLabel: selectedWarehouse.label,
-        locationLabel,
+        locationLabel: currentCode,
+        stockLocation: currentLocation,
         qty: t.qty,
         palletNo: t.palletNo,
       })),
@@ -225,12 +237,6 @@ export default function TirePicking() {
     // up until Confirm.
     // Operators remove a tire from the selection manually (the X button) if
     // they're done with it before then.
-  };
-
-  const addPick = () => {
-    if (!canAddPick || !selectedWarehouse) return;
-    const locationLabel = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`;
-    addPickAtLocation(locationLabel);
   };
 
   const removePick = (key: string) => {
@@ -269,6 +275,20 @@ export default function TirePicking() {
     setConfirmError(null);
 
     const now = new Date().toISOString();
+
+    // 1. Take the tires out of stock (all-or-nothing).
+    const { error: stockError } = await takeOutOfStock(
+      pickEntries.map((p) => ({ material: p.material, location: p.stockLocation, qty: p.qty })),
+      { flow: "Picking", planNo: planNo.trim(), movedBy: "Forklift operator", at: now },
+    );
+    if (stockError) {
+      setConfirmError(stockError);
+      setStockVersion((v) => v + 1);
+      setSubmitting(false);
+      return;
+    }
+
+    // 2. The pick log History and the PICK SHEET export read back.
     const rows: PickingRecord[] = pickEntries.map((p, idx) => ({
       id: `op-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
       material: p.material,
@@ -286,10 +306,8 @@ export default function TirePicking() {
     }));
 
     const { error } = await insertPicks(rows);
-    setSubmitting(false);
     if (error) {
-      setConfirmError(`Failed to record pick: ${error}`);
-      return;
+      setConfirmError(`Tires were taken out of stock, but the pick record failed to save: ${error}`);
     }
 
     void touchPlanNumber(planNo.trim(), "picking");
@@ -297,6 +315,8 @@ export default function TirePicking() {
 
     setPickEntries([]);
     setSelectedTires([]);
+    setStockVersion((v) => v + 1);
+    setSubmitting(false);
     setSuccess(`${totalQty} tire${totalQty === 1 ? "" : "s"} across ${pickEntries.length} pick${pickEntries.length === 1 ? "" : "s"} recorded.`);
   };
 
@@ -453,14 +473,21 @@ export default function TirePicking() {
                 )}
               >
                 {w.label}
-                {useStockOptions && ` · ${stockInWarehouse(w, stock)}`}
+                {hasStock && ` · ${stockInWarehouse(w, stock)}`}
               </button>
             ))}
           </div>
         )}
 
-        {selectedTires.length > 0 && !stockLoading && stock.size === 0 && (
-          <p className="text-sm text-muted-foreground">Not recorded in stock anywhere — choose the row and position.</p>
+        {selectedTires.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Select a tire above to see where it is in stock.</p>
+        ) : stockLoading ? (
+          <p className="text-sm text-muted-foreground">Finding where it is in stock…</p>
+        ) : !hasStock ? (
+          <p className="text-sm text-danger">Not in stock in any warehouse.</p>
+        ) : (
+          selectedWarehouse &&
+          columnOptions.length === 0 && <p className="text-sm text-muted-foreground">None in stock in {selectedWarehouse.label}.</p>
         )}
 
         {selectedWarehouse && (
@@ -493,15 +520,21 @@ export default function TirePicking() {
           </div>
         )}
 
-        {currentLocation && selectedTires.length > 0 && !stockLoading && (
+        {currentCode && currentLocation && selectedTires.length > 0 && !stockLoading && (
           <div className="rounded-xl bg-muted/50 px-3 py-2 text-sm space-y-1">
-            <p className="font-medium text-foreground">In stock here</p>
-            {selectedTires.map((t) => (
-              <p key={t.key} className="flex justify-between gap-2 text-muted-foreground">
-                <span className="truncate">{t.material}</span>
-                <span className="shrink-0">{stock.get(currentLocation)?.get(t.material) ?? 0}</span>
-              </p>
-            ))}
+            <p className="font-medium text-foreground">In stock at {currentCode}</p>
+            {selectedTires.map((t) => {
+              const available = availableAt(t.material, currentLocation);
+              const short = t.qty > available;
+              return (
+                <p key={t.key} className={cn("flex justify-between gap-2", short ? "text-danger" : "text-muted-foreground")}>
+                  <span className="truncate">{t.material}</span>
+                  <span className="shrink-0">
+                    {available} available{short && ` · need ${t.qty}`}
+                  </span>
+                </p>
+              );
+            })}
           </div>
         )}
 

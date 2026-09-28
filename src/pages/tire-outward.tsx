@@ -13,16 +13,15 @@ import { stockByRowPosition, stockInWarehouse, useStockLocations, type StockMap 
 import { fetchOngoingOutwardPlans, insertOutwards, type OngoingOutwardPlan } from "@/lib/outwards";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
 import { touchPlanNumber } from "@/lib/plan-numbers";
-import { insertTireHistory } from "@/lib/tire-history";
-import { fetchStockAt, fetchTireBySkuQrCode, upsertTires } from "@/lib/tires";
+import { takeOutOfStock } from "@/lib/stock-out";
+import { fetchTireBySkuQrCode } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { TireSkuRow } from "@/lib/supabase";
-import type { OutwardRecord, StageHistory, Tire } from "@/types/tire";
+import type { OutwardRecord } from "@/types/tire";
 
 // Same page as Picking — same plan details, tire selection, pallet no and
-// Row/Position flow — except confirming takes the tires out of stock: each
-// entry moves that many warehouse-stage tires at its location to the
-// dispatch stage, so Stock drops by exactly what went out.
+// Row/Position flow. Confirming takes the tires out of stock (see
+// takeOutOfStock), so Stock drops by exactly what went out.
 
 // A tire type selected for this outward batch, with its own quantity.
 interface SelectedTire {
@@ -55,8 +54,6 @@ const SHIFT_OPTIONS = [
   { value: "2", label: "Shift 2" },
   { value: "3", label: "Shift 3" },
 ];
-
-const stockKey = (material: string, location: string) => `${material}|${location}`;
 
 export default function TireOutward() {
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
@@ -268,56 +265,22 @@ export default function TireOutward() {
     setSuccess(null);
     setConfirmError(null);
 
-    // Re-read stock fresh — another device may have taken tires out since
-    // they were added here — and pick exactly which tire rows go out.
-    const needed = new Map<string, { material: string; location: string; qty: number }>();
-    for (const e of entries) {
-      const key = stockKey(e.material, e.stockLocation);
-      const existing = needed.get(key);
-      if (existing) existing.qty += e.qty;
-      else needed.set(key, { material: e.material, location: e.stockLocation, qty: e.qty });
-    }
-    const outgoing: Tire[] = [];
-    const short: string[] = [];
-    for (const n of needed.values()) {
-      const inStock = await fetchStockAt(n.material, n.location);
-      if (inStock.length < n.qty) short.push(`${n.material} at ${n.location} (only ${inStock.length} in stock)`);
-      else outgoing.push(...inStock.slice(0, n.qty));
-    }
-    if (short.length > 0) {
-      setConfirmError(`Not enough stock: ${short.join("; ")}. Nothing was taken out.`);
+    const now = new Date().toISOString();
+    const trimmedPlanNo = planNo.trim();
+
+    // 1. Take the tires out of stock (all-or-nothing).
+    const { error: stockError } = await takeOutOfStock(
+      entries.map((e) => ({ material: e.material, location: e.stockLocation, qty: e.qty })),
+      { flow: "Outward", planNo: trimmedPlanNo, movedBy: "Forklift operator", at: now },
+    );
+    if (stockError) {
+      setConfirmError(stockError);
       setStockVersion((v) => v + 1);
       setSubmitting(false);
       return;
     }
 
-    const now = new Date().toISOString();
-    const trimmedPlanNo = planNo.trim();
-
-    // 1. Take the tires out of stock.
-    const outLocation = trimmedPlanNo ? `Outward - Plan ${trimmedPlanNo}` : "Outward";
-    const { error: tiresError } = await upsertTires(
-      outgoing.map((t) => ({ ...t, currentStage: "dispatch" as const, location: outLocation, updatedAt: now })),
-    );
-    if (tiresError) {
-      setConfirmError(`Failed to take tires out of stock: ${tiresError}`);
-      setSubmitting(false);
-      return;
-    }
-
-    // 2. Per-tire movement history.
-    const history: StageHistory[] = outgoing.map((t, idx) => ({
-      id: `h-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
-      tireId: t.id,
-      stage: "dispatch",
-      location: outLocation,
-      movedAt: now,
-      movedBy: "Forklift operator",
-      notes: `Outward: ${t.model} taken out from ${t.location}`,
-    }));
-    await insertTireHistory(history);
-
-    // 3. The outward log History and the export read back.
+    // 2. The outward log History and the export read back.
     const records: OutwardRecord[] = entries.map((e, idx) => ({
       id: `ow-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
       material: e.material,

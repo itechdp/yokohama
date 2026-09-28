@@ -54,9 +54,9 @@ function fromRow(row: PickRow): PickingRecord {
   };
 }
 
-// Append-only — a pick, once recorded, is never edited after the
-// fact. This is the entire Picking flow now: no tires-table update, no
-// stage transition, just "who took what, from where, how many."
+// Append-only — a pick, once recorded, is never edited after the fact.
+// "Who took what, from where, how many" — the stock change itself happens
+// on the tires table (see takeOutOfStock in stock-out.ts).
 export async function insertPicks(rows: PickingRecord[]): Promise<{ error: string | null }> {
   if (rows.length === 0) return { error: null };
   const { error } = await supabase.from("picks").insert(rows.map(toRow));

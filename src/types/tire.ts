@@ -46,11 +46,10 @@ export interface PlacementLog {
   notes: string;
 }
 
-// One pick record: a worker reporting "I took N of this tire from
-// this location" — standalone, not tied to any tires-table row or stage
-// transition. Unlike the old Picking flow (which only worked because Inward
-// had already recorded a bin), this is the entire source of truth for where
-// a tire was picked from.
+// One pick record: a worker reporting "I took N of this tire from this
+// location". Confirming the pick also takes that many tires out of stock
+// (see takeOutOfStock in stock-out.ts); this record is what History and the
+// PICK SHEET export read back.
 export interface PickingRecord {
   id: string;
   material: string;
@@ -68,9 +67,8 @@ export interface PickingRecord {
 }
 
 // One Outward record: "N of this tire left stock from this location". Same
-// shape as PickingRecord, but unlike a pick it IS tied to the tires table —
-// confirming Outward moves that many warehouse-stage tires at the location
-// to the dispatch stage, so they drop out of Stock.
+// shape as PickingRecord; confirming Outward likewise takes that many tires
+// out of stock (see takeOutOfStock in stock-out.ts).
 export interface OutwardRecord {
   id: string;
   material: string;
