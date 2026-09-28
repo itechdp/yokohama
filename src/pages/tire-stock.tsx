@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { AlertTriangle, Download, Loader2, PackageSearch, Search, Warehouse as WarehouseIcon } from "lucide-react";
+import { AlertTriangle, Check, Download, Loader2, PackageSearch, Plus, Search, Trash2, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import ConfirmDialog from "@/components/confirm-dialog";
 import ExportMenu from "@/components/export-menu";
+import QtyStepper from "@/components/qty-stepper";
 import SelectMenu from "@/components/select-menu";
 import RequiredMark from "@/components/required-mark";
-import { binForLocation, type WarehouseDef } from "@/data/warehouse-bins";
+import TireCatalogSearch from "@/components/tire-catalog-search";
+import { binForLocation, locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
 import {
   exportStockToExcel,
   exportStockToPDF,
@@ -14,6 +17,8 @@ import {
   sanitizeForFilename,
   type StockExportRow,
 } from "@/lib/stock-export";
+import { addToStock, removeFromStock } from "@/lib/stock-adjust";
+import type { TireSkuRow } from "@/lib/supabase";
 import { fetchTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { Tire } from "@/types/tire";
@@ -46,20 +51,21 @@ function areaCodeOfBin(warehouse: WarehouseDef, bin: string): string | null {
   return colStr && rowStr ? `${warehouse.prefix}${colStr}-${rowStr}` : null;
 }
 
-// Every distinct area code (col+row) that currently holds at least one
-// warehouse-stage tire in this warehouse — the source of truth for which
-// Row/Position dropdown entries to show.
-function areaCodesInWarehouse(warehouse: WarehouseDef, tires: Tire[]): Set<string> {
-  const codes = new Set<string>();
+// How many warehouse-stage tires each area code (col+row) in this warehouse
+// holds — shown next to each Row/Position dropdown entry.
+function stockByAreaCode(warehouse: WarehouseDef, tires: Tire[]): Map<string, number> {
+  const counts = new Map<string, number>();
   for (const t of tires) {
     if (t.currentStage !== "warehouse") continue;
     const bin = binForLocation(warehouse, t.location);
     if (!bin) continue;
     const areaCode = areaCodeOfBin(warehouse, bin);
-    if (areaCode) codes.add(areaCode);
+    if (areaCode) counts.set(areaCode, (counts.get(areaCode) ?? 0) + 1);
   }
-  return codes;
+  return counts;
 }
+
+const tyresLabel = (n: number) => `${n} tyre${n === 1 ? "" : "s"}`;
 
 // One row per Serial No. — Quantity is the actual count of matching tyre
 // records for that serial, not a stored/hardcoded value.
@@ -68,6 +74,14 @@ interface StockGroup {
   brand: string;
   model: string;
   quantity: number;
+}
+
+// A tire type being added to the searched location.
+interface AddDraft {
+  material: string;
+  description: string;
+  brand?: string;
+  plyRatingBottom?: string;
 }
 
 function groupResultsBySerial(results: Tire[]): StockGroup[] {
@@ -154,7 +168,27 @@ export default function TireStock() {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<Tire[] | null>(null);
-  const [searchedLocation, setSearchedLocation] = useState<{ warehouse: string; col: string; row: string } | null>(null);
+  const [searchedLocation, setSearchedLocation] = useState<{
+    warehouse: string;
+    warehouseKey: string;
+    col: string;
+    row: string;
+  } | null>(null);
+
+  // Stock corrections on the searched location (edit qty / remove / add).
+  const [draftQty, setDraftQty] = useState<Record<string, number>>({});
+  const [busySerial, setBusySerial] = useState<string | null>(null);
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<StockGroup | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addDraft, setAddDraft] = useState<AddDraft | null>(null);
+  const [addQty, setAddQty] = useState(1);
+  // The add panel opens at the top of the list — bring it into view whichever
+  // "Add tire" button (header or bottom of the list) opened it.
+  const addPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (addOpen) addPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [addOpen]);
 
   useEffect(() => {
     fetchWarehouses()
@@ -173,36 +207,32 @@ export default function TireStock() {
 
   const selectedWarehouse = warehouses.find((w) => w.key === warehouseKey) || null;
 
-  // Row dropdown ("Select Row") — only columns that hold at least one tire
-  // anywhere in them, not every column the warehouse layout defines.
+  // Every Row/Position the warehouse layout defines — empty ones too, so a
+  // missing tire can be added anywhere — each labelled with what it holds.
+  const areaCounts = useMemo(
+    () => (selectedWarehouse ? stockByAreaCode(selectedWarehouse, tires) : new Map<string, number>()),
+    [selectedWarehouse, tires],
+  );
+
   const columnOptions = useMemo(() => {
     if (!selectedWarehouse) return [];
-    const codes = areaCodesInWarehouse(selectedWarehouse, tires);
-    const available: number[] = [];
-    selectedWarehouse.columnRowCounts.forEach((maxRow, colIndex) => {
+    return selectedWarehouse.columnRowCounts.map((maxRow, colIndex) => {
       const colNum = colIndex + 1;
-      for (let rowNum = 1; rowNum <= maxRow; rowNum++) {
-        if (codes.has(buildAreaCode(selectedWarehouse, colNum, rowNum))) {
-          available.push(colNum);
-          break;
-        }
-      }
+      let total = 0;
+      for (let rowNum = 1; rowNum <= maxRow; rowNum++) total += areaCounts.get(buildAreaCode(selectedWarehouse, colNum, rowNum)) ?? 0;
+      const label = String(colNum).padStart(2, "0");
+      return { value: String(colNum), label: total > 0 ? `${label} · ${tyresLabel(total)}` : label };
     });
-    return available;
-  }, [selectedWarehouse, tires]);
+  }, [selectedWarehouse, areaCounts]);
 
-  // Position dropdown ("Select Position") — only rows within the selected
-  // column that hold at least one tire, for the same reason.
   const rowOptions = useMemo(() => {
     if (!selectedWarehouse || !col) return [];
-    const codes = areaCodesInWarehouse(selectedWarehouse, tires);
     const max = selectedWarehouse.columnRowCounts[Number(col) - 1] ?? 0;
-    const available: number[] = [];
-    for (let rowNum = 1; rowNum <= max; rowNum++) {
-      if (codes.has(buildAreaCode(selectedWarehouse, Number(col), rowNum))) available.push(rowNum);
-    }
-    return available;
-  }, [selectedWarehouse, col, tires]);
+    return Array.from({ length: max }, (_, i) => {
+      const n = areaCounts.get(buildAreaCode(selectedWarehouse, Number(col), i + 1)) ?? 0;
+      return { value: String(i + 1), label: n > 0 ? `${i + 1} · ${tyresLabel(n)}` : String(i + 1) };
+    });
+  }, [selectedWarehouse, col, areaCounts]);
 
   // Same raw matches the search already found (Warehouse + Row + Position,
   // untouched) — only grouped by Serial No. for display, one row per serial.
@@ -211,10 +241,19 @@ export default function TireStock() {
     [results, searchedLocation],
   );
 
+  const resetAdjustments = () => {
+    setDraftQty({});
+    setAdjustError(null);
+    setAddOpen(false);
+    setAddDraft(null);
+    setAddQty(1);
+  };
+
   const clearResults = () => {
     setResults(null);
     setSearchedLocation(null);
     setError(null);
+    resetAdjustments();
   };
 
   const selectWarehouse = (key: string) => {
@@ -252,8 +291,10 @@ export default function TireStock() {
     try {
       const matches = await fetchTiresAtLocation(selectedWarehouse, col, row);
       setResults(matches);
+      resetAdjustments();
       setSearchedLocation({
         warehouse: selectedWarehouse.label,
+        warehouseKey: selectedWarehouse.key,
         col: String(col).padStart(2, "0"),
         row: String(row),
       });
@@ -262,6 +303,70 @@ export default function TireStock() {
     } finally {
       setSearching(false);
     }
+  };
+
+  const searchedWarehouse = searchedLocation ? warehouses.find((w) => w.key === searchedLocation.warehouseKey) ?? null : null;
+
+  // Re-reads the searched location (and the dropdown counts) after a change.
+  const refreshLocation = async () => {
+    if (!searchedWarehouse || !searchedLocation) return;
+    const [matches, all] = await Promise.all([
+      fetchTiresAtLocation(searchedWarehouse, searchedLocation.col, searchedLocation.row),
+      fetchTires(),
+    ]);
+    setResults(matches);
+    setTires(all);
+  };
+
+  // Sets how many of one tire sit at the searched location: fewer removes the
+  // newest units, more adds new ones. Re-reads stock first so it works from
+  // what's there now, not what was on screen.
+  const applyQty = async (group: StockGroup, target: number) => {
+    if (!searchedWarehouse || !searchedLocation || busySerial) return;
+    setBusySerial(group.serialNumber);
+    setAdjustError(null);
+    const fresh = await fetchTiresAtLocation(searchedWarehouse, searchedLocation.col, searchedLocation.row);
+    const units = fresh
+      .filter((t) => t.serialNumber === group.serialNumber)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    let result: { error: string | null } = { error: null };
+    if (target < units.length) {
+      result = await removeFromStock(units.slice(0, units.length - target));
+    } else if (target > units.length) {
+      const sample = units[0];
+      const areaCode = buildAreaCode(searchedWarehouse, Number(searchedLocation.col), Number(searchedLocation.row));
+      result = await addToStock(
+        {
+          material: group.serialNumber,
+          description: sample?.model ?? group.model,
+          brand: sample?.brand,
+          plyRatingBottom: sample?.plyRatingBottom,
+        },
+        locationForBin(searchedWarehouse, areaCode),
+        target - units.length,
+      );
+    }
+    if (result.error) setAdjustError(result.error);
+    setDraftQty((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== group.serialNumber)));
+    await refreshLocation();
+    setBusySerial(null);
+  };
+
+  const handleAdd = async () => {
+    if (!addDraft || !searchedWarehouse || !searchedLocation || busySerial) return;
+    setBusySerial(addDraft.material);
+    setAdjustError(null);
+    const areaCode = buildAreaCode(searchedWarehouse, Number(searchedLocation.col), Number(searchedLocation.row));
+    const { error: addError } = await addToStock(addDraft, locationForBin(searchedWarehouse, areaCode), addQty);
+    if (addError) {
+      setAdjustError(addError);
+    } else {
+      setAddOpen(false);
+      setAddDraft(null);
+      setAddQty(1);
+    }
+    await refreshLocation();
+    setBusySerial(null);
   };
 
   const [globalExportOpen, setGlobalExportOpen] = useState(false);
@@ -407,11 +512,6 @@ export default function TireStock() {
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">3. Select storage location</h2>
 
-        {selectedWarehouse && !loadingTires && columnOptions.length === 0 ? (
-          <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground">
-            No tyres available in this warehouse.
-          </div>
-        ) : (
           <>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="flex gap-3 sm:contents">
@@ -420,7 +520,7 @@ export default function TireStock() {
                   <SelectMenu
                     value={col}
                     placeholder="Select row"
-                    options={columnOptions.map((c) => ({ value: String(c), label: String(c).padStart(2, "0") }))}
+                    options={columnOptions}
                     onChange={selectCol}
                     disabled={!selectedWarehouse || loadingTires}
                   />
@@ -431,7 +531,7 @@ export default function TireStock() {
                   <SelectMenu
                     value={row}
                     placeholder="Select position"
-                    options={rowOptions.map((r) => ({ value: String(r), label: String(r) }))}
+                    options={rowOptions}
                     onChange={selectRow}
                     disabled={!selectedWarehouse || !col || loadingTires}
                   />
@@ -469,7 +569,6 @@ export default function TireStock() {
               </p>
             )}
           </>
-        )}
       </div>
 
       {searching && (
@@ -481,7 +580,18 @@ export default function TireStock() {
 
       {!searching && searchedLocation && results && (
         <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-          <h2 className="text-base font-medium text-foreground">4. Tyres in this location</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-medium text-foreground">4. Tyres in this location</h2>
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              disabled={addOpen || busySerial !== null}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <Plus className="size-4" />
+              Add tire
+            </button>
+          </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <p>
               <span className="text-foreground font-medium">Warehouse:</span> {searchedLocation.warehouse}
@@ -494,6 +604,79 @@ export default function TireStock() {
             </p>
           </div>
 
+          {addOpen && (
+            <div ref={addPanelRef} className="scroll-mt-4 rounded-xl border border-dashed border-border p-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-foreground">
+                  Add tire to this location
+                  <RequiredMark />
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddOpen(false);
+                    setAddDraft(null);
+                    setAddQty(1);
+                  }}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
+                  aria-label="Cancel adding a tire"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+              {addDraft ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{addDraft.description}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {[addDraft.material, addDraft.brand, addDraft.plyRatingBottom].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAddDraft(null)}
+                      className="shrink-0 text-xs font-medium text-primary hover:underline"
+                    >
+                      Change
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <QtyStepper value={addQty} min={1} onChange={setAddQty} />
+                    <button
+                      type="button"
+                      onClick={handleAdd}
+                      disabled={busySerial !== null}
+                      className="ml-auto inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {busySerial === addDraft.material ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                      Add {addQty}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <TireCatalogSearch
+                  alreadySelected={[]}
+                  onSelect={(sku: TireSkuRow) =>
+                    setAddDraft({
+                      material: sku.material,
+                      description: sku.description,
+                      brand: sku.brand ?? undefined,
+                      plyRatingBottom: sku.ply_rating_bottom ?? undefined,
+                    })
+                  }
+                />
+              )}
+            </div>
+          )}
+
+          {adjustError && (
+            <p className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger flex items-center gap-1.5">
+              <AlertTriangle className="size-4 shrink-0" />
+              {adjustError}
+            </p>
+          )}
+
           {results.length === 0 ? (
             <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground space-y-1">
               <p className="font-medium text-foreground">No tyres found</p>
@@ -503,52 +686,97 @@ export default function TireStock() {
               </p>
             </div>
           ) : (
-            <>
-              {/* Mobile: stacked cards */}
-              <div className="sm:hidden space-y-2">
-                {groupedResults.map((g) => (
-                  <div key={g.serialNumber} className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{g.serialNumber}</span>
-                      <span className="min-w-0 max-w-[30%] shrink-0 truncate text-center text-sm font-medium text-foreground">
-                        {g.brand}
-                      </span>
-                      <span className="shrink-0 whitespace-nowrap rounded-full bg-warning-soft px-2 py-0.5 text-xs font-bold text-warning">
-                        Quantity: {g.quantity}
-                      </span>
+            <ul className="divide-y divide-border rounded-xl border border-border">
+              {groupedResults.map((g) => {
+                const draft = draftQty[g.serialNumber] ?? g.quantity;
+                const changed = draft !== g.quantity;
+                const busy = busySerial === g.serialNumber;
+                return (
+                  <li key={g.serialNumber} className="px-3 py-2.5 space-y-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{g.model}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {g.serialNumber} · {g.brand}
+                      </p>
                     </div>
-                    <p className="text-sm text-foreground">{g.model}</p>
-                  </div>
-                ))}
-              </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <QtyStepper
+                        value={draft}
+                        min={1}
+                        onChange={(v) => setDraftQty((prev) => ({ ...prev, [g.serialNumber]: v }))}
+                      />
+                      {changed && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => applyQty(g, draft)}
+                            disabled={busySerial !== null}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {busy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraftQty((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== g.serialNumber)))
+                            }
+                            disabled={busySerial !== null}
+                            className="rounded-lg p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"
+                            aria-label={`Undo quantity change for ${g.model}`}
+                          >
+                            <X className="size-4" />
+                          </button>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setRemoveTarget(g)}
+                        disabled={busySerial !== null}
+                        className="ml-auto rounded-lg p-2 text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                        aria-label={`Remove ${g.model} from this location`}
+                        title="Remove from this location"
+                      >
+                        {busy && !changed ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
-              {/* Desktop / tablet: table */}
-              <div className="hidden sm:block overflow-x-auto rounded-xl border border-border">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Serial No.</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Brand</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Model</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Quantity</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {groupedResults.map((g) => (
-                      <tr key={g.serialNumber} className="hover:bg-muted/50 transition-colors">
-                        <td className="px-3 py-2 font-medium text-foreground whitespace-nowrap">{g.serialNumber}</td>
-                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{g.brand}</td>
-                        <td className="px-3 py-2 text-foreground whitespace-nowrap">{g.model}</td>
-                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{g.quantity}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
+          {!addOpen && (
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              disabled={busySerial !== null}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-dashed border-border px-4 py-3 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+            >
+              <Plus className="size-4" />
+              Add tire to this location
+            </button>
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={removeTarget !== null}
+        title="Remove from this location?"
+        message={
+          removeTarget && searchedLocation
+            ? `All ${removeTarget.quantity} of ${removeTarget.model} will be taken out of stock at ${searchedLocation.warehouse} → Row ${searchedLocation.col} → Position ${searchedLocation.row}.`
+            : ""
+        }
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => {
+          const target = removeTarget;
+          setRemoveTarget(null);
+          if (target) void applyQty(target, 0);
+        }}
+        onCancel={() => setRemoveTarget(null)}
+      />
 
       <ExportMenu
         open={globalExportOpen}
