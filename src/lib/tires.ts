@@ -69,6 +69,25 @@ export async function fetchTires(): Promise<Tire[]> {
   return (data ?? []).map(fromRow);
 }
 
+// Tires of one Material currently in stock at one exact location
+// ("<warehouse label> - Bin <code>") — what Outward takes out of stock.
+// Filtered in the database rather than from fetchTires(), so it stays exact
+// however many tires the table holds.
+export async function fetchStockAt(material: string, location: string): Promise<Tire[]> {
+  const { data, error } = await supabase
+    .from("tires")
+    .select("*")
+    .eq("current_stage", "warehouse")
+    .eq("serial_number", material)
+    .eq("location", location)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.warn("tires stock lookup failed:", error.message);
+    return [];
+  }
+  return (data ?? []).map(fromRow);
+}
+
 // Exact SKU QR Code lookup — used by the "Scan tire QR" flow, where the code
 // printed on a tire's SKU label encodes its sku_qr_code and has to resolve to
 // exactly one physical tire unit.

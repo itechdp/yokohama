@@ -79,6 +79,26 @@ export interface PickingRecord {
   notes: string;
 }
 
+// One Outward record: "N of this tire left stock from this location". Same
+// shape as PickingRecord, but unlike a pick it IS tied to the tires table —
+// confirming Outward moves that many warehouse-stage tires at the location
+// to the dispatch stage, so they drop out of Stock.
+export interface OutwardRecord {
+  id: string;
+  material: string;
+  description: string;
+  warehouse: string;
+  location: string;
+  quantity: number;
+  planNo: string;
+  palletNo: string;
+  shift: string;
+  pickerName: string;
+  outwardAt: string;
+  outwardBy: string;
+  notes: string;
+}
+
 // One Inward receipt record: "this many of this tire arrived at this bin",
 // grouped by Material + bin within a single confirm — mirrors PickingRecord's
 // role for the other direction. Several of these, across several confirms

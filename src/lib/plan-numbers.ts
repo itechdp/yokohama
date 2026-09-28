@@ -9,7 +9,7 @@ import { supabase } from "@/lib/supabase";
 // plan no only shows up in fetchTodayPlanNumbers() while that timestamp
 // falls on today — no cleanup job needed for yesterday's plan numbers to
 // stop appearing.
-export type PlanNoKind = "inward" | "picking";
+export type PlanNoKind = "inward" | "picking" | "outward";
 
 export async function fetchTodayPlanNumbers(kind: PlanNoKind): Promise<string[]> {
   const { data, error } = await supabase

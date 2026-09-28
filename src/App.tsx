@@ -10,6 +10,7 @@ import TireDispatch from "@/pages/tire-dispatch";
 import TireHistory from "@/pages/tire-history";
 import TireInward from "@/pages/tire-inward";
 import TireNew from "@/pages/tire-new";
+import TireOutward from "@/pages/tire-outward";
 import TirePicking from "@/pages/tire-picking";
 import TireSkuCatalog from "@/pages/tire-sku-catalog";
 import TireStock from "@/pages/tire-stock";
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/tires/bulk-upload" element={<TireBulkUpload />} />
         <Route path="/tires/inward" element={<TireInward />} />
         <Route path="/tires/picking" element={<TirePicking />} />
+        <Route path="/tires/outward" element={<TireOutward />} />
         <Route path="/tires/stock" element={<TireStock />} />
         <Route path="/tires/dispatch" element={<TireDispatch />} />
         <Route path="/tires/history" element={<TireHistory />} />

@@ -1,12 +1,13 @@
 import { fetchInwardReceipts } from "@/lib/inward-receipts";
+import { fetchOutwards } from "@/lib/outwards";
 import { fetchPicks } from "@/lib/picks";
 import { fetchPlacementLogs } from "@/lib/placement-logs";
 import { fetchTires } from "@/lib/tires";
 
-export type HistoryType = "inward" | "picking";
+export type HistoryType = "inward" | "picking" | "outward";
 
-// One row of the combined Inward/Picking history — inward_receipts (Inward)
-// and picks (Picking) normalized into one shape so the History page
+// One row of the combined Inward/Picking/Outward history — inward_receipts
+// (Inward), picks (Picking) and outwards (Outward) normalized into one shape so the History page
 // can filter and sort them together. Inward confirms made before
 // inward_receipts existed only live in placement_logs (one row per tire, no
 // Plan No) — those are folded in too so older history doesn't disappear.
@@ -49,13 +50,14 @@ export function localDateKey(iso: string): string {
   return `${y}-${m}-${day}`;
 }
 
-// Fetches every Inward receipt and Pick ever recorded (plus legacy
+// Fetches every Inward receipt, Pick and Outward ever recorded (plus legacy
 // pre-receipt Inward placements) and merges them into one list sorted
 // newest-first.
 export async function fetchHistoryRows(): Promise<HistoryRow[]> {
-  const [receipts, picks, logs, tires] = await Promise.all([
+  const [receipts, picks, outwards, logs, tires] = await Promise.all([
     fetchInwardReceipts(),
     fetchPicks(),
+    fetchOutwards(),
     fetchPlacementLogs(),
     fetchTires(),
   ]);
@@ -124,7 +126,23 @@ export async function fetchHistoryRows(): Promise<HistoryRow[]> {
     by: p.pickedBy,
   }));
 
-  return [...inwardRows, ...legacyInwardRows, ...pickingRows].sort((a, b) => b.at.localeCompare(a.at));
+  const outwardRows: HistoryRow[] = outwards.map((o) => ({
+    id: o.id,
+    type: "outward",
+    at: o.outwardAt,
+    material: o.material,
+    description: o.description,
+    warehouse: o.warehouse || "—",
+    location: o.location || "—",
+    quantity: o.quantity,
+    planNo: o.planNo ?? "",
+    palletNo: o.palletNo ?? "",
+    shift: o.shift ?? "",
+    pickerName: o.pickerName ?? "",
+    by: o.outwardBy,
+  }));
+
+  return [...inwardRows, ...legacyInwardRows, ...pickingRows, ...outwardRows].sort((a, b) => b.at.localeCompare(a.at));
 }
 
 // One aggregated line within a batch — every raw row sharing the same

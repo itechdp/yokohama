@@ -9,6 +9,7 @@ import {
   Download,
   History as HistoryIcon,
   Loader2,
+  PackageMinus,
   Search,
 } from "lucide-react";
 import SelectMenu from "@/components/select-menu";
@@ -29,6 +30,7 @@ const TYPE_OPTIONS: { value: HistoryType | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "inward", label: "Inward" },
   { value: "picking", label: "Picking" },
+  { value: "outward", label: "Outward" },
 ];
 
 function formatDateTime(iso: string): string {
@@ -114,6 +116,7 @@ export default function TireHistory() {
   // Re-downloads a whole plan as its own form — the same Daily Receipt /
   // PICK SHEET layout used at confirm time, with every confirm made under
   // that plan no on that day, one line per material+location+pallet.
+  // Picking and Outward both use the PICK SHEET layout.
   const handleBatchDownload = async (batch: HistoryBatch) => {
     if (downloadingKey) return;
     setDownloadingKey(batch.key);
@@ -276,11 +279,19 @@ export default function TireHistory() {
                     <span
                       className={cn(
                         "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
-                        b.type === "inward" ? "bg-info/10 text-info" : "bg-warning-soft text-warning",
+                        b.type === "inward" && "bg-info/10 text-info",
+                        b.type === "picking" && "bg-warning-soft text-warning",
+                        b.type === "outward" && "bg-danger/10 text-danger",
                       )}
                     >
-                      {b.type === "inward" ? <ArrowDownToLine className="size-3" /> : <ArrowUpFromLine className="size-3" />}
-                      {b.type === "inward" ? "Inward" : "Picking"}
+                      {b.type === "inward" ? (
+                        <ArrowDownToLine className="size-3" />
+                      ) : b.type === "picking" ? (
+                        <ArrowUpFromLine className="size-3" />
+                      ) : (
+                        <PackageMinus className="size-3" />
+                      )}
+                      {b.type === "inward" ? "Inward" : b.type === "picking" ? "Picking" : "Outward"}
                     </span>
                     <div className="flex items-center gap-1 shrink-0">
                       <span className="text-xs text-muted-foreground">
