@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Check, ChevronDown, ClipboardPen, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ClipboardPen, Download, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ConfirmDialog from "@/components/confirm-dialog";
 import QtyStepper from "@/components/qty-stepper";
 import RequiredMark from "@/components/required-mark";
 import TireCatalogSearch from "@/components/tire-catalog-search";
+import { exportPreparedPlanExcel } from "@/lib/prepared-plan-export";
 import {
   deletePreparedPlan,
   fetchPreparedPlans,
@@ -38,6 +39,20 @@ export default function PreparePlan() {
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PreparedPlan | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const handleDownload = async (p: PreparedPlan) => {
+    if (downloadingId) return;
+    setDownloadingId(p.id);
+    setError(null);
+    try {
+      await exportPreparedPlanExcel(p);
+    } catch {
+      setError(`Couldn't download plan ${p.planNo}. Please try again.`);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const load = () =>
     fetchPreparedPlans().then((rows) => {
@@ -260,6 +275,16 @@ export default function PreparePlan() {
                         {new Date(p.createdAt).toLocaleDateString("en-GB")}
                       </p>
                     </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(p)}
+                    disabled={downloadingId !== null}
+                    className="shrink-0 inline-flex items-center justify-center rounded-lg border border-border p-2 text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40 transition-colors"
+                    aria-label={`Download plan ${p.planNo} as Excel`}
+                    title="Download Excel"
+                  >
+                    {downloadingId === p.id ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
                   </button>
                   <button
                     type="button"
