@@ -4,7 +4,7 @@ import { ClipboardList, MapPin, QrCode, X } from "lucide-react";
 import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
 import SelectMenu from "@/components/select-menu";
-import StockLocationList, { buildStockCards, qtyToTake } from "@/components/stock-location-list";
+import StockLocationList, { buildStockCards, qtyToTake, type StockCard } from "@/components/stock-location-list";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import type { WarehouseDef } from "@/data/warehouse-bins";
@@ -78,7 +78,8 @@ export default function TirePicking() {
   const [stockVersion, setStockVersion] = useState(0);
 
   const [success, setSuccess] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  // Location card currently being confirmed.
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,7 +92,6 @@ export default function TirePicking() {
   const { stock, loading: stockLoading } = useStockLocations(materials, stockVersion);
   const cards = useMemo(() => buildStockCards(selectedTires, warehouses, stock), [selectedTires, warehouses, stock]);
   const chosen = cards.filter((c) => qtyToTake(takeQty, c) > 0);
-  const totalQty = chosen.reduce((sum, c) => sum + qtyToTake(takeQty, c), 0);
   const takingFor = (material: string) =>
     chosen.filter((c) => c.material === material).reduce((sum, c) => sum + qtyToTake(takeQty, c), 0);
 
@@ -109,8 +109,7 @@ export default function TirePicking() {
     setPalletNo((prev) => Object.fromEntries(Object.entries(prev).filter(keep)));
   };
 
-  // Every location being taken from needs a pallet no.
-  const missingPallet = chosen.some((c) => !(palletNo[c.key] ?? "").trim());
+  const blockedReason = !planNo.trim() || !shift ? "Fill in plan no and shift above first." : null;
 
   // "Scan tire QR" — resolves the code printed on a tire's SKU label to its
   // Material/Model and adds it to step 2's selection.
@@ -128,52 +127,48 @@ export default function TirePicking() {
     return true;
   };
 
-  const handleConfirm = async () => {
-    if (submitting || chosen.length === 0) return;
-    if (!planNo.trim() || !shift) {
-      setConfirmError("Fill in plan no and shift before confirming.");
-      return;
-    }
-    if (missingPallet) {
-      setConfirmError("Fill in the pallet no for every location being picked from.");
-      return;
-    }
-    setSubmitting(true);
+  // Confirms one location card on its own: takes its quantity out of stock
+  // and logs it straight away, so History's export picks it up.
+  const handleTake = async (card: StockCard) => {
+    const qty = qtyToTake(takeQty, card);
+    const pallet = (palletNo[card.key] ?? "").trim();
+    if (busyKey || qty === 0 || !pallet || blockedReason) return;
+    setBusyKey(card.key);
     setSuccess(null);
     setConfirmError(null);
 
     const now = new Date().toISOString();
     const trimmedPlanNo = planNo.trim();
 
-    // 1. Take the tires out of stock (all-or-nothing).
+    // 1. Take the tires out of stock.
     const { error: stockError } = await takeOutOfStock(
-      chosen.map((c) => ({ material: c.material, location: c.location, qty: qtyToTake(takeQty, c) })),
+      [{ material: card.material, location: card.location, qty }],
       { flow: "Picking", planNo: trimmedPlanNo, movedBy: "Forklift operator", at: now },
     );
     if (stockError) {
       setConfirmError(stockError);
       setStockVersion((v) => v + 1);
-      setSubmitting(false);
+      setBusyKey(null);
       return;
     }
 
-    // 2. The pick log History and the PICK SHEET export read back.
-    const rows: PickingRecord[] = chosen.map((c, idx) => ({
-      id: `op-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
-      material: c.material,
-      description: c.description,
-      warehouse: c.warehouseLabel,
-      location: c.code,
-      quantity: qtyToTake(takeQty, c),
+    // 2. The pick log History and the export read back.
+    const row: PickingRecord = {
+      id: `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      material: card.material,
+      description: card.description,
+      warehouse: card.warehouseLabel,
+      location: card.code,
+      quantity: qty,
       planNo: trimmedPlanNo,
-      palletNo: (palletNo[c.key] ?? "").trim(),
+      palletNo: pallet,
       shift,
       pickerName: pickerName.trim(),
       pickedAt: now,
       pickedBy: "Forklift operator",
       notes: "",
-    }));
-    const { error } = await insertPicks(rows);
+    };
+    const { error } = await insertPicks([row]);
     if (error) {
       setConfirmError(`Tires were taken out of stock, but the pick record failed to save: ${error}`);
     }
@@ -181,12 +176,13 @@ export default function TirePicking() {
     void touchPlanNumber(trimmedPlanNo, "picking");
     loadOngoingPlans();
 
-    setTakeQty({});
-    setPalletNo({});
-    setSelectedTires([]);
+    // Clear just this card; the rest stay as set for the next one.
+    const drop = <T,>(prev: Record<string, T>) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== card.key));
+    setTakeQty(drop);
+    setPalletNo(drop);
     setStockVersion((v) => v + 1);
-    setSubmitting(false);
-    setSuccess(`${totalQty} tire${totalQty === 1 ? "" : "s"} picked from ${chosen.length} location${chosen.length === 1 ? "" : "s"}.`);
+    setBusyKey(null);
+    setSuccess(`${qty} tire${qty === 1 ? "" : "s"} picked from ${card.code}.`);
   };
 
   return (
@@ -312,21 +308,13 @@ export default function TirePicking() {
           onQtyChange={(key, value) => setTakeQty((prev) => ({ ...prev, [key]: value }))}
           palletNo={palletNo}
           onPalletNoChange={(key, value) => setPalletNo((prev) => ({ ...prev, [key]: value }))}
+          actionLabel="Pick"
+          onAction={handleTake}
+          busyKey={busyKey}
+          blockedReason={blockedReason}
         />
-        {totalQty > 0 && (
-          <p className="text-xs text-muted-foreground">
-            {totalQty} tire{totalQty === 1 ? "" : "s"} from {chosen.length} location{chosen.length === 1 ? "" : "s"}
-          </p>
-        )}
       </div>
 
-      <button
-        onClick={handleConfirm}
-        disabled={totalQty === 0 || !planNo.trim() || !shift || missingPallet || submitting}
-        className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      >
-        {submitting ? "Confirming…" : "OK - Confirm picking"}
-      </button>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
 

@@ -58,7 +58,8 @@ export function buildStockCards(
 
 // The green location cards on Picking/Outward: one per place a selected tire
 // is in stock, each with its own quantity to take (0 up to what's there)
-// and the pallet no those tires go onto.
+// and the pallet no those tires go onto. Each card is confirmed on its own
+// with its action button — one location at a time.
 export default function StockLocationList({
   tires,
   cards,
@@ -67,6 +68,10 @@ export default function StockLocationList({
   onQtyChange,
   palletNo,
   onPalletNoChange,
+  actionLabel,
+  onAction,
+  busyKey,
+  blockedReason,
 }: {
   tires: { material: string }[];
   cards: StockCard[];
@@ -75,6 +80,12 @@ export default function StockLocationList({
   onQtyChange: (key: string, value: number) => void;
   palletNo: Record<string, string>;
   onPalletNoChange: (key: string, value: string) => void;
+  actionLabel: string;
+  onAction: (card: StockCard) => void;
+  // Card currently being confirmed; every button waits while one is.
+  busyKey: string | null;
+  // Why nothing can be confirmed yet (e.g. plan details missing).
+  blockedReason?: string | null;
 }) {
   if (tires.length === 0) {
     return (
@@ -83,7 +94,9 @@ export default function StockLocationList({
       </div>
     );
   }
-  if (loading) {
+  // Only the first lookup shows the spinner — refreshes after each card is
+  // confirmed keep the list in place so the operator doesn't lose their spot.
+  if (loading && cards.length === 0) {
     return (
       <div className="rounded-xl bg-muted p-6 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
         <Loader2 className="size-4 animate-spin" />
@@ -95,8 +108,13 @@ export default function StockLocationList({
   const missing = tires.filter((t) => !cards.some((c) => c.material === t.material));
   return (
     <div className="space-y-2">
+      {blockedReason && cards.length > 0 && (
+        <p className="rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">{blockedReason}</p>
+      )}
       {cards.map((c) => {
         const taking = qtyToTake(qty, c);
+        const pallet = (palletNo[c.key] ?? "").trim();
+        const busy = busyKey === c.key;
         return (
           <div
             key={c.key}
@@ -110,7 +128,7 @@ export default function StockLocationList({
             <p className="text-xs text-muted-foreground truncate">
               {c.material} · {c.warehouseLabel} · {c.inStock} in stock
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="shrink-0">
                 <QtyStepper value={taking} min={0} max={c.inStock} onChange={(v) => onQtyChange(c.key, v)} />
               </div>
@@ -122,8 +140,17 @@ export default function StockLocationList({
                 disabled={taking === 0}
                 aria-label={`Pallet no for ${c.code}`}
                 autoComplete="off"
-                className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                className="min-w-24 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
               />
+              <button
+                type="button"
+                onClick={() => onAction(c)}
+                disabled={taking === 0 || !pallet || !!blockedReason || busyKey !== null}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                {actionLabel}
+              </button>
             </div>
           </div>
         );
