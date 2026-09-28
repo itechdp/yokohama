@@ -264,19 +264,25 @@ export default function TirePicking() {
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">1. Plan details</h2>
-        <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Ongoing plan</span>
-          <SelectMenu
-            value={ongoingPlans.some((p) => p.planNo === planNo.trim()) ? planNo.trim() : ""}
-            placeholder={ongoingPlans.length === 0 ? "No plans yet" : "Select ongoing plan"}
-            options={ongoingPlans.map((p) => ({
-              value: p.planNo,
-              label: [p.planNo, p.pickerName, p.shift && `Shift ${p.shift}`].filter(Boolean).join(" · "),
-            }))}
-            onChange={selectOngoingPlan}
-            onOpen={loadOngoingPlans}
-          />
-        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block min-w-0 space-y-1.5">
+            <span className="text-sm font-medium text-foreground">Plan No</span>
+            <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="picking" />
+          </label>
+          <label className="block min-w-0 space-y-1.5">
+            <span className="text-sm font-medium text-foreground">Ongoing plan</span>
+            <SelectMenu
+              value={ongoingPlans.some((p) => p.planNo === planNo.trim()) ? planNo.trim() : ""}
+              placeholder={ongoingPlans.length === 0 ? "No plans yet" : "Select ongoing plan"}
+              options={ongoingPlans.map((p) => ({
+                value: p.planNo,
+                label: [p.planNo, p.pickerName, p.shift && `Shift ${p.shift}`].filter(Boolean).join(" · "),
+              }))}
+              onChange={selectOngoingPlan}
+              onOpen={loadOngoingPlans}
+            />
+          </label>
+        </div>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium text-foreground">Picker Name</span>
           <input
@@ -287,10 +293,6 @@ export default function TirePicking() {
             autoComplete="off"
             className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Plan No</span>
-          <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="picking" />
         </label>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium text-foreground">Shift</span>
