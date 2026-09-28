@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Check, ChevronDown, ClipboardPen, Download, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ClipboardPen, Download, Loader2, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ConfirmDialog from "@/components/confirm-dialog";
+import PlanUploadModal from "@/components/plan-upload-modal";
 import QtyStepper from "@/components/qty-stepper";
 import RequiredMark from "@/components/required-mark";
 import TireCatalogSearch from "@/components/tire-catalog-search";
@@ -40,6 +41,8 @@ export default function PreparePlan() {
   const [deleteTarget, setDeleteTarget] = useState<PreparedPlan | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const handleDownload = async (p: PreparedPlan) => {
     if (downloadingId) return;
@@ -139,12 +142,25 @@ export default function PreparePlan() {
 
   return (
     <div className="p-6 space-y-6 max-w-xl mx-auto">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
           <ClipboardPen className="size-6 text-primary" />
           Prepare Plan
         </h1>
         <div className="flex items-center gap-2 shrink-0">
+          {!form && (
+            <button
+              type="button"
+              onClick={() => {
+                setNotice(null);
+                setUploadOpen(true);
+              }}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+            >
+              <Upload className="size-4" />
+              Upload
+            </button>
+          )}
           {!form && (
             <button
               type="button"
@@ -165,6 +181,7 @@ export default function PreparePlan() {
       </div>
 
       {error && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div>}
+      {notice && <div className="rounded-xl bg-success/10 px-3 py-2 text-sm text-success">{notice}</div>}
 
       {form && (
         <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-4">
@@ -324,6 +341,16 @@ export default function PreparePlan() {
           })
         )}
       </div>
+
+      <PlanUploadModal
+        open={uploadOpen}
+        existingPlanNos={plans.map((p) => p.planNo)}
+        onClose={() => setUploadOpen(false)}
+        onSaved={(message) => {
+          setNotice(message);
+          load();
+        }}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}

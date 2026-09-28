@@ -58,6 +58,28 @@ export async function fetchTireSkuByMaterial(material: string): Promise<TireSkuR
   return data ?? null;
 }
 
+// Many exact Material lookups at once (Prepare Plan's Excel upload), keyed by
+// upper-cased Material. Chunked so a long list can't overflow the URL, with a
+// case-insensitive retry for anything the exact match missed.
+export async function fetchTireSkusByMaterials(materials: string[]): Promise<Map<string, TireSkuRow>> {
+  const unique = Array.from(new Set(materials.map((m) => m.trim()).filter(Boolean)));
+  const found = new Map<string, TireSkuRow>();
+  for (let i = 0; i < unique.length; i += 200) {
+    const { data, error } = await supabase.from("tire_skus").select("*").in("material", unique.slice(i, i + 200));
+    if (error) {
+      console.warn("tire_skus batch lookup failed:", error.message);
+      continue;
+    }
+    for (const row of (data ?? []) as TireSkuRow[]) found.set(row.material.toUpperCase(), row);
+  }
+  for (const m of unique) {
+    if (found.has(m.toUpperCase())) continue;
+    const row = await fetchTireSkuByMaterial(m);
+    if (row) found.set(m.toUpperCase(), row);
+  }
+  return found;
+}
+
 // Looks up SKUs by material/description for the Add Tire autocomplete.
 export async function searchTireSkus(query: string, limit = 8): Promise<TireSkuRow[]> {
   const q = query.trim();
