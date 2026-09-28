@@ -4,7 +4,7 @@ import { ClipboardList, MapPin, QrCode, X } from "lucide-react";
 import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
 import SelectMenu from "@/components/select-menu";
-import StockLocationList, { buildStockCards } from "@/components/stock-location-list";
+import StockLocationList, { buildStockCards, qtyToTake } from "@/components/stock-location-list";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import type { WarehouseDef } from "@/data/warehouse-bins";
@@ -29,7 +29,6 @@ interface SelectedTire {
   description: string;
   brand?: string;
   plyRatingBottom?: string;
-  palletNo: string;
 }
 
 const SHIFT_OPTIONS = [
@@ -72,6 +71,8 @@ export default function TirePicking() {
   const [selectedTires, setSelectedTires] = useState<SelectedTire[]>([]);
   // Quantity to take per location card, keyed by stockCardKey.
   const [takeQty, setTakeQty] = useState<Record<string, number>>({});
+  // Pallet no per location card, keyed by stockCardKey.
+  const [palletNo, setPalletNo] = useState<Record<string, string>>({});
   const [scanningTire, setScanningTire] = useState(false);
   // Bumped after every confirm so stock counts refresh.
   const [stockVersion, setStockVersion] = useState(0);
@@ -89,29 +90,27 @@ export default function TirePicking() {
   const materials = useMemo(() => selectedTires.map((t) => t.material), [selectedTires]);
   const { stock, loading: stockLoading } = useStockLocations(materials, stockVersion);
   const cards = useMemo(() => buildStockCards(selectedTires, warehouses, stock), [selectedTires, warehouses, stock]);
-  const chosen = cards.filter((c) => (takeQty[c.key] ?? 0) > 0);
-  const totalQty = chosen.reduce((sum, c) => sum + (takeQty[c.key] ?? 0), 0);
+  const chosen = cards.filter((c) => qtyToTake(takeQty, c) > 0);
+  const totalQty = chosen.reduce((sum, c) => sum + qtyToTake(takeQty, c), 0);
   const takingFor = (material: string) =>
-    chosen.filter((c) => c.material === material).reduce((sum, c) => sum + (takeQty[c.key] ?? 0), 0);
+    chosen.filter((c) => c.material === material).reduce((sum, c) => sum + qtyToTake(takeQty, c), 0);
 
   const addSelectedTire = (entry: { material: string; description: string; brand?: string; plyRatingBottom?: string }) => {
     setSelectedTires((prev) => {
       if (prev.some((t) => t.material === entry.material)) return prev;
-      return [...prev, { key: entry.material, palletNo: "", ...entry }];
+      return [...prev, { key: entry.material, ...entry }];
     });
   };
 
   const removeSelectedTire = (key: string) => {
     setSelectedTires((prev) => prev.filter((t) => t.key !== key));
-    setTakeQty((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith(`${key}|`))));
+    const keep = ([k]: [string, unknown]) => !k.startsWith(`${key}|`);
+    setTakeQty((prev) => Object.fromEntries(Object.entries(prev).filter(keep)));
+    setPalletNo((prev) => Object.fromEntries(Object.entries(prev).filter(keep)));
   };
 
-  const setSelectedTirePalletNo = (key: string, value: string) => {
-    setSelectedTires((prev) => prev.map((t) => (t.key === key ? { ...t, palletNo: value } : t)));
-  };
-
-  // Every tire being taken needs a pallet no.
-  const missingPallet = selectedTires.some((t) => takingFor(t.material) > 0 && !t.palletNo.trim());
+  // Every location being taken from needs a pallet no.
+  const missingPallet = chosen.some((c) => !(palletNo[c.key] ?? "").trim());
 
   // "Scan tire QR" — resolves the code printed on a tire's SKU label to its
   // Material/Model and adds it to step 2's selection.
@@ -136,7 +135,7 @@ export default function TirePicking() {
       return;
     }
     if (missingPallet) {
-      setConfirmError("Fill in the pallet no for every tire being picked.");
+      setConfirmError("Fill in the pallet no for every location being picked from.");
       return;
     }
     setSubmitting(true);
@@ -148,7 +147,7 @@ export default function TirePicking() {
 
     // 1. Take the tires out of stock (all-or-nothing).
     const { error: stockError } = await takeOutOfStock(
-      chosen.map((c) => ({ material: c.material, location: c.location, qty: takeQty[c.key] ?? 0 })),
+      chosen.map((c) => ({ material: c.material, location: c.location, qty: qtyToTake(takeQty, c) })),
       { flow: "Picking", planNo: trimmedPlanNo, movedBy: "Forklift operator", at: now },
     );
     if (stockError) {
@@ -165,9 +164,9 @@ export default function TirePicking() {
       description: c.description,
       warehouse: c.warehouseLabel,
       location: c.code,
-      quantity: takeQty[c.key] ?? 0,
+      quantity: qtyToTake(takeQty, c),
       planNo: trimmedPlanNo,
-      palletNo: selectedTires.find((t) => t.material === c.material)?.palletNo.trim() ?? "",
+      palletNo: (palletNo[c.key] ?? "").trim(),
       shift,
       pickerName: pickerName.trim(),
       pickedAt: now,
@@ -183,6 +182,7 @@ export default function TirePicking() {
     loadOngoingPlans();
 
     setTakeQty({});
+    setPalletNo({});
     setSelectedTires([]);
     setStockVersion((v) => v + 1);
     setSubmitting(false);
@@ -292,18 +292,7 @@ export default function TirePicking() {
                     <X className="size-4" />
                   </button>
                 </div>
-                <label className="block space-y-1.5">
-                  <span className="text-sm font-medium text-foreground">Pallet No</span>
-                  <input
-                    type="text"
-                    value={t.palletNo}
-                    onChange={(e) => setSelectedTirePalletNo(t.key, e.target.value)}
-                    placeholder="Enter pallet no"
-                    autoComplete="off"
-                    className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                </label>
-                <p className="text-xs text-muted-foreground">Picking {takingFor(t.material)} — set quantities on the locations below.</p>
+                <p className="text-xs text-muted-foreground">Picking {takingFor(t.material)} — set quantities and pallet no on the locations below.</p>
               </li>
             ))}
           </ul>
@@ -321,6 +310,8 @@ export default function TirePicking() {
           loading={stockLoading}
           qty={takeQty}
           onQtyChange={(key, value) => setTakeQty((prev) => ({ ...prev, [key]: value }))}
+          palletNo={palletNo}
+          onPalletNoChange={(key, value) => setPalletNo((prev) => ({ ...prev, [key]: value }))}
         />
         {totalQty > 0 && (
           <p className="text-xs text-muted-foreground">

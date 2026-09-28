@@ -18,6 +18,11 @@ export interface StockCard {
 
 export const stockCardKey = (material: string, location: string) => `${material}|${location}`;
 
+// Quantity to take from a card: prefilled with everything in stock there
+// until the operator changes it, and never more than what's there.
+export const qtyToTake = (qty: Record<string, number>, card: StockCard) =>
+  Math.min(qty[card.key] ?? card.inStock, card.inStock);
+
 // Every location holding each selected tire, in warehouse order then by bin
 // code. Locations with nothing in stock simply aren't in the map, so they
 // never show up.
@@ -52,19 +57,24 @@ export function buildStockCards(
 }
 
 // The green location cards on Picking/Outward: one per place a selected tire
-// is in stock, each with its own quantity to take (0 up to what's there).
+// is in stock, each with its own quantity to take (0 up to what's there)
+// and the pallet no those tires go onto.
 export default function StockLocationList({
   tires,
   cards,
   loading,
   qty,
   onQtyChange,
+  palletNo,
+  onPalletNoChange,
 }: {
   tires: { material: string }[];
   cards: StockCard[];
   loading: boolean;
   qty: Record<string, number>;
   onQtyChange: (key: string, value: number) => void;
+  palletNo: Record<string, string>;
+  onPalletNoChange: (key: string, value: string) => void;
 }) {
   if (tires.length === 0) {
     return (
@@ -86,7 +96,7 @@ export default function StockLocationList({
   return (
     <div className="space-y-2">
       {cards.map((c) => {
-        const taking = qty[c.key] ?? 0;
+        const taking = qtyToTake(qty, c);
         return (
           <div
             key={c.key}
@@ -103,6 +113,19 @@ export default function StockLocationList({
             <div className="flex justify-center">
               <QtyStepper value={taking} min={0} max={c.inStock} onChange={(v) => onQtyChange(c.key, v)} />
             </div>
+            {taking > 0 && (
+              <label className="block space-y-1.5 text-left">
+                <span className="text-sm font-medium text-foreground">Pallet No</span>
+                <input
+                  type="text"
+                  value={palletNo[c.key] ?? ""}
+                  onChange={(e) => onPalletNoChange(c.key, e.target.value)}
+                  placeholder="Enter pallet no"
+                  autoComplete="off"
+                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </label>
+            )}
           </div>
         );
       })}
