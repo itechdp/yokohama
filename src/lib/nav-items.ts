@@ -1,10 +1,10 @@
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  ClipboardList,
   History,
   LayoutGrid,
   List,
-  PackageMinus,
   PackageSearch,
   Warehouse,
   type LucideIcon,
@@ -21,8 +21,8 @@ export interface NavItem {
 // button) rather than getting its own top-level circle.
 export const FEATURE_ITEMS: NavItem[] = [
   { to: "/tires/inward", label: "Inward", icon: ArrowDownToLine },
-  { to: "/tires/picking", label: "Picking", icon: ArrowUpFromLine },
-  { to: "/tires/outward", label: "Outward", icon: PackageMinus },
+  { to: "/tires/picking", label: "Picking", icon: ClipboardList },
+  { to: "/tires/outward", label: "Outward", icon: ArrowUpFromLine },
   { to: "/tires/stock", label: "Stock", icon: PackageSearch },
   { to: "/tires/skus", label: "Show tire", icon: List },
   { to: "/tires/history", label: "History", icon: History },

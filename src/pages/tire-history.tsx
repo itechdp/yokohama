@@ -6,10 +6,10 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Download,
   History as HistoryIcon,
   Loader2,
-  PackageMinus,
   Search,
 } from "lucide-react";
 import SelectMenu from "@/components/select-menu";
@@ -287,9 +287,9 @@ export default function TireHistory() {
                       {b.type === "inward" ? (
                         <ArrowDownToLine className="size-3" />
                       ) : b.type === "picking" ? (
-                        <ArrowUpFromLine className="size-3" />
+                        <ClipboardList className="size-3" />
                       ) : (
-                        <PackageMinus className="size-3" />
+                        <ArrowUpFromLine className="size-3" />
                       )}
                       {b.type === "inward" ? "Inward" : b.type === "picking" ? "Picking" : "Outward"}
                     </span>

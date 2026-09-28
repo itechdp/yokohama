@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowUpFromLine, MapPin, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { ClipboardList, MapPin, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
@@ -248,7 +248,7 @@ export default function TirePicking() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
-            <ArrowUpFromLine className="size-6 text-primary" />
+            <ClipboardList className="size-6 text-primary" />
             Picking
           </h1>
         </div>
