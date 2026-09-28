@@ -110,22 +110,21 @@ export default function StockLocationList({
             <p className="text-xs text-muted-foreground truncate">
               {c.material} · {c.warehouseLabel} · {c.inStock} in stock
             </p>
-            <div className="flex justify-center">
-              <QtyStepper value={taking} min={0} max={c.inStock} onChange={(v) => onQtyChange(c.key, v)} />
+            <div className="flex items-center gap-2">
+              <div className="shrink-0">
+                <QtyStepper value={taking} min={0} max={c.inStock} onChange={(v) => onQtyChange(c.key, v)} />
+              </div>
+              <input
+                type="text"
+                value={palletNo[c.key] ?? ""}
+                onChange={(e) => onPalletNoChange(c.key, e.target.value)}
+                placeholder="Pallet no"
+                disabled={taking === 0}
+                aria-label={`Pallet no for ${c.code}`}
+                autoComplete="off"
+                className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+              />
             </div>
-            {taking > 0 && (
-              <label className="block space-y-1.5 text-left">
-                <span className="text-sm font-medium text-foreground">Pallet No</span>
-                <input
-                  type="text"
-                  value={palletNo[c.key] ?? ""}
-                  onChange={(e) => onPalletNoChange(c.key, e.target.value)}
-                  placeholder="Enter pallet no"
-                  autoComplete="off"
-                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </label>
-            )}
           </div>
         );
       })}
