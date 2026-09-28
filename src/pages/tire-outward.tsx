@@ -12,6 +12,7 @@ import type { WarehouseDef } from "@/data/warehouse-bins";
 import { useStockLocations } from "@/hooks/use-stock-locations";
 import { fetchOngoingOutwardPlans, insertOutwards, type OngoingOutwardPlan } from "@/lib/outwards";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
+import { fetchPreparedPlans, type PreparedPlan } from "@/lib/prepared-plans";
 import { touchPlanNumber } from "@/lib/plan-numbers";
 import { takeOutOfStock } from "@/lib/stock-out";
 import { fetchTireBySkuQrCode } from "@/lib/tires";
@@ -54,12 +55,42 @@ export default function TireOutward() {
   // Every plan used on Outward so far, latest first — choosing one fills in
   // the rest of Plan details from that plan's latest outward.
   const [ongoingPlans, setOngoingPlans] = useState<OngoingOutwardPlan[]>([]);
+  // Plans made on the Prepare Plan page — listed in the same dropdown;
+  // choosing one also selects all its tires in step 2.
+  const [preparedPlans, setPreparedPlans] = useState<PreparedPlan[]>([]);
   const loadOngoingPlans = () => {
     fetchOngoingOutwardPlans().then(setOngoingPlans);
+    fetchPreparedPlans().then(setPreparedPlans);
   };
+  const planOptions = [
+    ...preparedPlans.map((p) => {
+      const used = ongoingPlans.find((o) => o.planNo === p.planNo);
+      return {
+        value: p.planNo,
+        label: [p.planNo, "Prepared", `${p.lines.length} tire${p.lines.length === 1 ? "" : "s"}`, used?.shift && `Shift ${used.shift}`]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    }),
+    ...ongoingPlans
+      .filter((o) => !preparedPlans.some((p) => p.planNo === o.planNo))
+      .map((o) => ({
+        value: o.planNo,
+        label: [o.planNo, o.pickerName, o.shift && `Shift ${o.shift}`].filter(Boolean).join(" · "),
+      })),
+  ];
   const selectOngoingPlan = (value: string) => {
+    const prepared = preparedPlans.find((p) => p.planNo === value);
+    if (prepared) {
+      for (const { material, description, brand, plyRatingBottom } of prepared.lines) {
+        addSelectedTire({ material, description, brand, plyRatingBottom });
+      }
+    }
     const plan = ongoingPlans.find((p) => p.planNo === value);
-    if (!plan) return;
+    if (!plan) {
+      if (prepared) handlePlanNoChange(prepared.planNo);
+      return;
+    }
     handlePlanNoChange(plan.planNo);
     if (plan.pickerName) setPickerName(plan.pickerName);
     if (plan.shift) setShift(plan.shift);
@@ -211,12 +242,9 @@ export default function TireOutward() {
           <label className="block min-w-0 space-y-1.5">
             <span className="text-sm font-medium text-foreground">Ongoing plan</span>
             <SelectMenu
-              value={ongoingPlans.some((p) => p.planNo === planNo.trim()) ? planNo.trim() : ""}
-              placeholder={ongoingPlans.length === 0 ? "No plans yet" : "Select ongoing plan"}
-              options={ongoingPlans.map((p) => ({
-                value: p.planNo,
-                label: [p.planNo, p.pickerName, p.shift && `Shift ${p.shift}`].filter(Boolean).join(" · "),
-              }))}
+              value={planOptions.some((o) => o.value === planNo.trim()) ? planNo.trim() : ""}
+              placeholder={planOptions.length === 0 ? "No plans yet" : "Select ongoing plan"}
+              options={planOptions}
               onChange={selectOngoingPlan}
               onOpen={loadOngoingPlans}
             />

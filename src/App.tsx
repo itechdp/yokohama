@@ -5,6 +5,7 @@ import BayHistory from "@/pages/bay-history";
 import Home from "@/pages/home";
 import PendingTyreDetail from "@/pages/pending-tyre-detail";
 import PendingTyrePlans from "@/pages/pending-tyre-plans";
+import PreparePlan from "@/pages/prepare-plan";
 import TireBulkUpload from "@/pages/tire-bulk-upload";
 import TireHistory from "@/pages/tire-history";
 import TireInward from "@/pages/tire-inward";
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/tires/new" element={<TireNew />} />
         <Route path="/tires/bulk-upload" element={<TireBulkUpload />} />
         <Route path="/tires/inward" element={<TireInward />} />
+        <Route path="/plans" element={<PreparePlan />} />
         <Route path="/tires/picking" element={<TirePicking />} />
         <Route path="/tires/outward" element={<TireOutward />} />
         <Route path="/tires/stock" element={<TireStock />} />
