@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ArrowUpFromLine, MapPin, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ import SelectMenu from "@/components/select-menu";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import { locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
+import { stockByRowPosition, stockInWarehouse, useStockLocations, type StockMap } from "@/hooks/use-stock-locations";
 import { fetchOngoingOutwardPlans, insertOutwards, type OngoingOutwardPlan } from "@/lib/outwards";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
 import { touchPlanNumber } from "@/lib/plan-numbers";
@@ -92,10 +93,7 @@ export default function TireOutward() {
   const [entries, setEntries] = useState<OutwardEntry[]>([]);
   const [scanningTire, setScanningTire] = useState(false);
 
-  // Tires in stock per Material + location, looked up for whatever Row/
-  // Position is chosen. Bumped after every confirm so counts refresh.
-  const [stock, setStock] = useState<Map<string, number>>(new Map());
-  const [stockLoading, setStockLoading] = useState(false);
+  // Bumped after every confirm so stock counts refresh.
   const [stockVersion, setStockVersion] = useState(0);
 
   const [success, setSuccess] = useState<string | null>(null);
@@ -112,20 +110,58 @@ export default function TireOutward() {
 
   const selectedWarehouse = warehouses.find((w) => w.key === warehouseKey) || null;
 
-  const columnOptions = useMemo(
-    () => (selectedWarehouse ? selectedWarehouse.columnRowCounts.map((_, i) => i + 1) : []),
-    [selectedWarehouse],
+  // Where the selected tires currently sit in stock. Warehouse / Row /
+  // Position only offer places that actually hold them, with counts.
+  const materials = useMemo(() => selectedTires.map((t) => t.material), [selectedTires]);
+  const { stock, loading: stockLoading } = useStockLocations(materials, stockVersion);
+  const hasStock = selectedTires.length > 0 && !stockLoading && stock.size > 0;
+  const stockGrid = useMemo(
+    () => (selectedWarehouse ? stockByRowPosition(selectedWarehouse, stock) : new Map<number, Map<number, number>>()),
+    [selectedWarehouse, stock],
   );
 
-  const maxRows = selectedWarehouse ? Math.max(...selectedWarehouse.columnRowCounts) : 0;
+  const columnOptions = useMemo(
+    () =>
+      [...stockGrid.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([col, rows]) => {
+          const total = [...rows.values()].reduce((sum, n) => sum + n, 0);
+          return { value: String(col), label: `${String(col).padStart(2, "0")} · ${total} in stock` };
+        }),
+    [stockGrid],
+  );
+
   const rowOptions = useMemo(() => {
-    if (!selectedWarehouse) return [];
-    if (manualCol) {
-      const max = selectedWarehouse.columnRowCounts[Number(manualCol) - 1] ?? 0;
-      return Array.from({ length: max }, (_, i) => i + 1);
+    const rows = stockGrid.get(Number(manualCol));
+    if (!rows) return [];
+    return [...rows.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([row, n]) => ({ value: String(row), label: `${row} · ${n} in stock` }));
+  }, [stockGrid, manualCol]);
+
+  // Follow the stock: switch to a warehouse that holds the selected tires
+  // (once per stock lookup, so tapping another warehouse afterwards sticks),
+  // and fill in Row / Position when there's only one choice left.
+  const followedStock = useRef<StockMap | null>(null);
+  useEffect(() => {
+    if (!hasStock || !selectedWarehouse || followedStock.current === stock) return;
+    followedStock.current = stock;
+    if (stockInWarehouse(selectedWarehouse, stock) > 0) return;
+    const withStock = warehouses.find((w) => stockInWarehouse(w, stock) > 0);
+    if (withStock) {
+      setWarehouseKey(withStock.key);
+      setManualCol("");
+      setManualRow("");
     }
-    return Array.from({ length: maxRows }, (_, i) => i + 1);
-  }, [selectedWarehouse, manualCol, maxRows]);
+  }, [hasStock, selectedWarehouse, warehouses, stock]);
+  useEffect(() => {
+    if (stockLoading || columnOptions.some((o) => o.value === manualCol)) return;
+    setManualCol(columnOptions.length === 1 ? columnOptions[0].value : "");
+  }, [stockLoading, columnOptions, manualCol]);
+  useEffect(() => {
+    if (stockLoading || rowOptions.some((o) => o.value === manualRow)) return;
+    setManualRow(rowOptions.length === 1 ? rowOptions[0].value : "");
+  }, [stockLoading, rowOptions, manualRow]);
 
   // The chosen Row/Position as a bin code and as the full tires.location.
   const currentCode =
@@ -134,36 +170,13 @@ export default function TireOutward() {
       : null;
   const currentLocation = selectedWarehouse && currentCode ? locationForBin(selectedWarehouse, currentCode) : null;
 
-  const materialsKey = selectedTires.map((t) => t.material).join(",");
-  useEffect(() => {
-    if (!currentLocation || !materialsKey) return;
-    let cancelled = false;
-    setStockLoading(true);
-    Promise.all(
-      materialsKey.split(",").map(async (material) => [material, (await fetchStockAt(material, currentLocation)).length] as const),
-    ).then((counts) => {
-      if (cancelled) return;
-      setStock((prev) => {
-        const next = new Map(prev);
-        for (const [material, n] of counts) next.set(stockKey(material, currentLocation), n);
-        return next;
-      });
-      setStockLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentLocation, materialsKey, stockVersion]);
-
   // Already queued below for this Material + location — not yet out of the
   // database, but no longer available to add again.
   const queuedAt = (material: string, location: string) =>
     entries.filter((e) => e.material === material && e.stockLocation === location).reduce((sum, e) => sum + e.qty, 0);
 
-  const availableAt = (material: string, location: string): number | null => {
-    const inStock = stock.get(stockKey(material, location));
-    return inStock === undefined ? null : Math.max(0, inStock - queuedAt(material, location));
-  };
+  const availableAt = (material: string, location: string): number =>
+    Math.max(0, (stock.get(location)?.get(material) ?? 0) - queuedAt(material, location));
 
   const addSelectedTire = (entry: { material: string; description: string; brand?: string; plyRatingBottom?: string }) => {
     setSelectedTires((prev) => {
@@ -188,8 +201,7 @@ export default function TireOutward() {
   const shortages =
     currentLocation && !stockLoading
       ? selectedTires.filter((t) => {
-          const available = availableAt(t.material, currentLocation);
-          return available !== null && t.qty > available;
+          return t.qty > availableAt(t.material, currentLocation);
         })
       : [];
 
@@ -200,7 +212,6 @@ export default function TireOutward() {
     !!currentCode &&
     !!currentLocation &&
     !stockLoading &&
-    selectedTires.every((t) => availableAt(t.material, currentLocation) !== null) &&
     shortages.length === 0;
 
   // Every selected tire type becomes its own entry against the chosen
@@ -490,9 +501,21 @@ export default function TireOutward() {
                 )}
               >
                 {w.label}
+                {hasStock && ` · ${stockInWarehouse(w, stock)}`}
               </button>
             ))}
           </div>
+        )}
+
+        {selectedTires.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Select a tire above to see where it is in stock.</p>
+        ) : stockLoading ? (
+          <p className="text-sm text-muted-foreground">Finding where it is in stock…</p>
+        ) : !hasStock ? (
+          <p className="text-sm text-danger">Not in stock in any warehouse.</p>
+        ) : (
+          selectedWarehouse &&
+          columnOptions.length === 0 && <p className="text-sm text-muted-foreground">None in stock in {selectedWarehouse.label}.</p>
         )}
 
         {selectedWarehouse && (
@@ -502,7 +525,7 @@ export default function TireOutward() {
               <SelectMenu
                 value={manualCol}
                 placeholder="Select row"
-                options={columnOptions.map((c) => ({ value: String(c), label: String(c).padStart(2, "0") }))}
+                options={columnOptions}
                 onChange={(col) => {
                   setManualCol(col);
                   if (col && manualRow) {
@@ -518,7 +541,7 @@ export default function TireOutward() {
               <SelectMenu
                 value={manualRow}
                 placeholder="Select position"
-                options={rowOptions.map((r) => ({ value: String(r), label: String(r) }))}
+                options={rowOptions}
                 onChange={setManualRow}
               />
             </label>
@@ -533,12 +556,12 @@ export default function TireOutward() {
             ) : (
               selectedTires.map((t) => {
                 const available = availableAt(t.material, currentLocation);
-                const short = available !== null && t.qty > available;
+                const short = t.qty > available;
                 return (
                   <p key={t.key} className={cn("flex justify-between gap-2", short ? "text-danger" : "text-muted-foreground")}>
                     <span className="truncate">{t.material}</span>
                     <span className="shrink-0">
-                      {available ?? "—"} available{short && ` · need ${t.qty}`}
+                      {available} available{short && ` · need ${t.qty}`}
                     </span>
                   </p>
                 );

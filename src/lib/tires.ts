@@ -88,6 +88,32 @@ export async function fetchStockAt(material: string, location: string): Promise<
   return (data ?? []).map(fromRow);
 }
 
+// Where each of these Materials currently sits in stock — one entry per
+// warehouse-stage tire (Material + exact location). Backs the "where is this
+// tire" lookup on Picking/Outward. Pages through the table since PostgREST
+// caps a single response at 1000 rows.
+export async function fetchStockLocations(materials: string[]): Promise<{ material: string; location: string }[]> {
+  if (materials.length === 0) return [];
+  const pageSize = 1000;
+  const out: { material: string; location: string }[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("tires")
+      .select("id, serial_number, location")
+      .eq("current_stage", "warehouse")
+      .in("serial_number", materials)
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) {
+      console.warn("tires stock locations fetch failed:", error.message);
+      break;
+    }
+    for (const row of data ?? []) out.push({ material: row.serial_number as string, location: row.location as string });
+    if (!data || data.length < pageSize) break;
+  }
+  return out;
+}
+
 // Exact SKU QR Code lookup — used by the "Scan tire QR" flow, where the code
 // printed on a tire's SKU label encodes its sku_qr_code and has to resolve to
 // exactly one physical tire unit.
