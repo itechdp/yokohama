@@ -2,15 +2,12 @@
  * Daily Tire's Receipt & Put Away - Excel export
  *
  * Recreates the paper reference form as an A4-landscape Excel workbook using
- * ExcelJS. NO OF TIRES RECV, PLAN NO, DATE and SHIFT are all auto-filled
- * from live data; every other header field is left blank so it can be
- * filled in by hand, exactly like the paper form.
+ * ExcelJS. OPERATOR NAME, NO OF TIRES RECV, SHEET NO, DATE and SHIFT are all
+ * auto-filled from live data.
  *
  * The header block is a strict 3-column grid (LEFT / MID / RIGHT), matching
  * the reference photo: LEFT carries one full-width label per row, MID and
- * RIGHT carry a second/third label only on the rows that have one (Plan No +
- * Date, Sheet No + Shift) and stay blank otherwise — not the finer,
- * mismatched column split an earlier version used.
+ * RIGHT carry a second/third label (Sheet No + Date, then Shift on the right).
  */
 
 import ExcelJS from "exceljs";
@@ -167,6 +164,9 @@ const MID_END = 8;
 const RIGHT_START = 9;
 const RIGHT_END = 10;
 
+// Title (row 1) + two header-block rows, then the table.
+const TABLE_HEADER_ROW = 4;
+
 // ---------------------------------------------------------------------------
 // Main export function
 // ---------------------------------------------------------------------------
@@ -225,14 +225,11 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?:
   ws.getColumn(COL_TOTAL_TIME).width = 15;
   ws.getColumn(COL_REMARKS).width = 21;
 
-  // Row heights
+  // Row heights — title, two header-block rows, then the table header row.
   ws.getRow(1).height = 26;
   ws.getRow(2).height = 18;
   ws.getRow(3).height = 18;
-  ws.getRow(4).height = 18;
-  ws.getRow(5).height = 18;
-  ws.getRow(6).height = 18;
-  ws.getRow(7).height = 30;
+  ws.getRow(TABLE_HEADER_ROW).height = 30;
 
   // ROW 1 - Title, with the reference form's green top/bottom banner rule
   mergeRange(ws, 1, 1, 1, LAST_COL, {
@@ -249,43 +246,29 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?:
     },
   });
 
-  // ROW 2 - FID SUPERVISOR NAME (auto-filled from the Driver Name input; LEFT only; MID/RIGHT blank, same as the form)
+  // ROW 2 - OPERATOR NAME (auto-filled from the Supervisor/Driver Name input) | SHEET NO (the Inward "Sheet No") | DATE
   mergeRange(ws, 2, LEFT_START, 2, LEFT_END, {
-    value: `FID SUPERVISOR NAME :   ${pickerName}`,
+    value: `OPERATOR NAME :   ${pickerName}`,
     bold: true,
     vAlign: "middle",
   });
-  mergeRange(ws, 2, MID_START, 2, MID_END, { value: "", vAlign: "middle" });
-  mergeRange(ws, 2, RIGHT_START, 2, RIGHT_END, { value: "", vAlign: "middle" });
-
-  // ROW 3 - OPERATOR NAME (same pattern)
-  mergeRange(ws, 3, LEFT_START, 3, LEFT_END, { value: "OPERATOR NAME :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 3, MID_START, 3, MID_END, { value: "", vAlign: "middle" });
-  mergeRange(ws, 3, RIGHT_START, 3, RIGHT_END, { value: "", vAlign: "middle" });
-
-  // ROW 4 - NO.OF PALLET RECV | PLAN NO (auto-filled) | DATE (auto-filled)
-  mergeRange(ws, 4, LEFT_START, 4, LEFT_END, { value: "NO.OF PALLET RECV :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 4, MID_START, 4, MID_END, { value: `PLAN NO :   ${planNo ?? ""}`, bold: true, vAlign: "middle" });
-  mergeRange(ws, 4, RIGHT_START, 4, RIGHT_END, {
+  mergeRange(ws, 2, MID_START, 2, MID_END, { value: `SHEET NO :   ${planNo ?? ""}`, bold: true, vAlign: "middle" });
+  mergeRange(ws, 2, RIGHT_START, 2, RIGHT_END, {
     value: `DATE :   ${sheetDate.toLocaleDateString("en-GB")}`,
     bold: true,
     vAlign: "middle",
   });
 
-  // ROW 5 - NO OF TIRES RECV (dynamically populated!) | SHEET NO | SHIFT (auto-filled)
-  mergeRange(ws, 5, LEFT_START, 5, LEFT_END, {
+  // ROW 3 - NO OF TIRES RECV (dynamically populated!) | (blank) | SHIFT (auto-filled)
+  mergeRange(ws, 3, LEFT_START, 3, LEFT_END, {
     value: `NO OF TIRES RECV :   ${noOfTiresRecv}`,
     bold: true,
     vAlign: "middle",
   });
-  mergeRange(ws, 5, MID_START, 5, MID_END, { value: "SHEET NO :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 5, RIGHT_START, 5, RIGHT_END, { value: `SHIFT :   ${shift}`, bold: true, vAlign: "middle" });
+  mergeRange(ws, 3, MID_START, 3, MID_END, { value: "", vAlign: "middle" });
+  mergeRange(ws, 3, RIGHT_START, 3, RIGHT_END, { value: `SHIFT :   ${shift}`, bold: true, vAlign: "middle" });
 
-  // ROW 6 - NO OF NS RECV (LEFT only; rest of the row blank)
-  mergeRange(ws, 6, LEFT_START, 6, LEFT_END, { value: "NO OF NS RECV :", bold: true, vAlign: "middle" });
-  mergeRange(ws, 6, MID_START, 6, LAST_COL, { value: "", vAlign: "middle" });
-
-  // ROW 7 - Table column headers
+  // Table column headers
   const headers = [
     { label: "SL.NO", startCol: COL_SLNO, endCol: COL_SLNO },
     { label: "PALLET NO", startCol: COL_PALLET, endCol: COL_PALLET },
@@ -300,7 +283,7 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?:
   ];
 
   for (const h of headers) {
-    mergeRange(ws, 7, h.startCol, 7, h.endCol, {
+    mergeRange(ws, TABLE_HEADER_ROW, h.startCol, TABLE_HEADER_ROW, h.endCol, {
       value: h.label,
       bold: true,
       fontSize: 9,
@@ -314,7 +297,7 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?:
   const DATA_ROWS = Math.max(rows.length, 20);
 
   for (let i = 0; i < DATA_ROWS; i++) {
-    const excelRow = 8 + i;
+    const excelRow = TABLE_HEADER_ROW + 1 + i;
     // Taller than a single-line row — SKU CODE carries the tire description
     // as a second line in the same cell, so it needs the extra height.
     ws.getRow(excelRow).height = 28;
@@ -334,7 +317,7 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?:
   }
 
   // Print area
-  ws.pageSetup.printArea = `A1:J${7 + DATA_ROWS}`;
+  ws.pageSetup.printArea = `A1:J${TABLE_HEADER_ROW + DATA_ROWS}`;
 
   const planTag = planNo ? `${safeFilenamePart(planNo)}-` : "";
   await downloadWorkbook(wb, `inward-receipt-${planTag}${new Date().toISOString().slice(0, 10)}.xlsx`);
