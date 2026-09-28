@@ -29,6 +29,7 @@ interface SelectedTire {
   brand?: string;
   plyRatingBottom?: string;
   qty: number;
+  palletNo: string;
 }
 
 const SHIFT_OPTIONS = [
@@ -48,7 +49,6 @@ export default function TireInward() {
   // the operator actually clears/changes it — not reset to blank each time.
   const [planNo, setPlanNo] = useState(() => getStoredPlanNo("inward"));
   const [pickerName, setPickerName] = useState("");
-  const [palletNo, setPalletNo] = useState("");
   const [shift, setShift] = useState("");
   const handlePlanNoChange = (value: string) => {
     setPlanNo(value);
@@ -82,7 +82,7 @@ export default function TireInward() {
   const addSelectedTire = (entry: { material: string; model: string; brand?: string; plyRatingBottom?: string }) => {
     setSelectedTires((prev) => {
       if (prev.some((t) => t.material === entry.material)) return prev;
-      return [...prev, { key: entry.material, qty: 1, ...entry }];
+      return [...prev, { key: entry.material, qty: 1, palletNo: "", ...entry }];
     });
   };
 
@@ -120,6 +120,12 @@ export default function TireInward() {
   const setQty = (key: string, value: number) => {
     setSelectedTires((prev) => prev.map((t) => (t.key === key ? { ...t, qty: value } : t)));
   };
+
+  const setSelectedTirePalletNo = (key: string, value: string) => {
+    setSelectedTires((prev) => prev.map((t) => (t.key === key ? { ...t, palletNo: value } : t)));
+  };
+
+  const allPalletNosFilled = selectedTires.every((t) => t.palletNo.trim());
 
   const totalQty = selectedTires.reduce((sum, t) => sum + t.qty, 0);
 
@@ -189,8 +195,8 @@ export default function TireInward() {
     setSubmitting(true);
     setSuccess(null);
     setConfirmError(null);
-    if (!planNo.trim() || !palletNo.trim() || !shift) {
-      setConfirmError("Fill in plan no, pallet no and shift before confirming.");
+    if (!planNo.trim() || !shift || !allPalletNosFilled) {
+      setConfirmError("Fill in plan no, shift and a pallet no for every tire before confirming.");
       setSubmitting(false);
       return;
     }
@@ -323,7 +329,7 @@ export default function TireInward() {
       location: g.location,
       quantity: g.qty,
       planNo: planNo.trim(),
-      palletNo: palletNo.trim(),
+      palletNo: selectedTires.find((t) => t.material === g.material)?.palletNo.trim() ?? "",
       shift,
       pickerName: pickerName.trim(),
       receivedAt: now,
@@ -369,30 +375,19 @@ export default function TireInward() {
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">1. Plan details</h2>
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Picker Name</span>
+          <span className="text-sm font-medium text-foreground">Driver Name</span>
           <input
             type="text"
             value={pickerName}
             onChange={(e) => setPickerName(e.target.value)}
-            placeholder="Enter picker name"
+            placeholder="Enter driver name"
             autoComplete="off"
             className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </label>
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Plan No</span>
+          <span className="text-sm font-medium text-foreground">Sheet No</span>
           <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="inward" />
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Pallet No</span>
-          <input
-            type="text"
-            value={palletNo}
-            onChange={(e) => setPalletNo(e.target.value)}
-            placeholder="Enter pallet no"
-            autoComplete="off"
-            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
         </label>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium text-foreground">Shift</span>
@@ -437,6 +432,17 @@ export default function TireInward() {
                   </button>
                 </div>
                 <QtyStepper value={t.qty} onChange={(v) => setQty(t.key, v)} />
+                <label className="block space-y-1.5">
+                  <span className="text-sm font-medium text-foreground">Pallet No</span>
+                  <input
+                    type="text"
+                    value={t.palletNo}
+                    onChange={(e) => setSelectedTirePalletNo(t.key, e.target.value)}
+                    placeholder="Enter pallet no"
+                    autoComplete="off"
+                    className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </label>
               </li>
             ))}
           </ul>
@@ -705,7 +711,7 @@ export default function TireInward() {
 
       <button
         onClick={handleConfirm}
-        disabled={selectedTires.length === 0 || !planNo.trim() || !palletNo.trim() || !shift || submitting}
+        disabled={selectedTires.length === 0 || !planNo.trim() || !shift || !allPalletNosFilled || submitting}
         className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         {submitting ? "Confirming…" : "OK - Confirm inward"}

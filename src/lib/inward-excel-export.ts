@@ -249,7 +249,7 @@ export async function exportInwardReceiptExcel(opts: InwardFormOptions, planNo?:
     },
   });
 
-  // ROW 2 - FID SUPERVISOR NAME (auto-filled from the Picker Name input; LEFT only; MID/RIGHT blank, same as the form)
+  // ROW 2 - FID SUPERVISOR NAME (auto-filled from the Driver Name input; LEFT only; MID/RIGHT blank, same as the form)
   mergeRange(ws, 2, LEFT_START, 2, LEFT_END, {
     value: `FID SUPERVISOR NAME :   ${pickerName}`,
     bold: true,
