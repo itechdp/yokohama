@@ -58,12 +58,12 @@ export interface PlacementLog {
   notes: string;
 }
 
-// One Outward pick record: a worker reporting "I took N of this tire from
+// One pick record: a worker reporting "I took N of this tire from
 // this location" — standalone, not tied to any tires-table row or stage
-// transition. Unlike the old Outward flow (which only worked because Inward
+// transition. Unlike the old Picking flow (which only worked because Inward
 // had already recorded a bin), this is the entire source of truth for where
 // a tire was picked from.
-export interface OutwardPick {
+export interface PickingRecord {
   id: string;
   material: string;
   description: string;
@@ -80,7 +80,7 @@ export interface OutwardPick {
 }
 
 // One Inward receipt record: "this many of this tire arrived at this bin",
-// grouped by Material + bin within a single confirm — mirrors OutwardPick's
+// grouped by Material + bin within a single confirm — mirrors PickingRecord's
 // role for the other direction. Several of these, across several confirms
 // sharing the same Plan No, are what the cumulative Inward Excel is built from.
 export interface InwardReceipt {

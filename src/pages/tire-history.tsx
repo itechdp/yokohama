@@ -21,14 +21,14 @@ import {
   type HistoryType,
 } from "@/lib/history-report";
 import { exportInwardReceiptExcel, type InwardFormRow } from "@/lib/inward-excel-export";
-import { exportPickSheetExcel, type PickSheetFormRow } from "@/lib/outward-excel-export";
+import { exportPickSheetExcel, type PickSheetFormRow } from "@/lib/picking-excel-export";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const TYPE_OPTIONS: { value: HistoryType | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "inward", label: "Inward" },
-  { value: "outward", label: "Outward" },
+  { value: "picking", label: "Picking" },
 ];
 
 function formatDateTime(iso: string): string {
@@ -280,7 +280,7 @@ export default function TireHistory() {
                       )}
                     >
                       {b.type === "inward" ? <ArrowDownToLine className="size-3" /> : <ArrowUpFromLine className="size-3" />}
-                      {b.type === "inward" ? "Inward" : "Outward"}
+                      {b.type === "inward" ? "Inward" : "Picking"}
                     </span>
                     <div className="flex items-center gap-1 shrink-0">
                       <span className="text-xs text-muted-foreground">

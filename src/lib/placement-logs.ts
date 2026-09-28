@@ -44,7 +44,7 @@ export async function insertPlacementLogs(rows: PlacementLog[]): Promise<{ error
 }
 
 // Full Inward history — used by the "Export Excel" report on the Inward
-// page. Newest first, same ordering convention as fetchOutwardPicks.
+// page. Newest first, same ordering convention as fetchPicks.
 export async function fetchPlacementLogs(): Promise<PlacementLog[]> {
   const { data, error } = await supabase.from("placement_logs").select("*").order("placed_at", { ascending: false });
   if (error) {

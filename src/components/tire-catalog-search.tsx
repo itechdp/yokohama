@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
 import type { TireSkuRow } from "@/lib/supabase";
 
-// Shared by Inward and Outward's "pick a tire type" step. Always shows
+// Shared by Inward and Picking's "pick a tire type" step. Always shows
 // something: the first page of the catalog when there's no query, filtered
 // results once the operator types. No focus/blur dance — the list is a
 // normal part of the page, not a dropdown you have to summon.

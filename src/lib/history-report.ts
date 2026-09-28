@@ -1,12 +1,12 @@
 import { fetchInwardReceipts } from "@/lib/inward-receipts";
-import { fetchOutwardPicks } from "@/lib/outward-picks";
+import { fetchPicks } from "@/lib/picks";
 import { fetchPlacementLogs } from "@/lib/placement-logs";
 import { fetchTires } from "@/lib/tires";
 
-export type HistoryType = "inward" | "outward";
+export type HistoryType = "inward" | "picking";
 
-// One row of the combined Inward/Outward history — inward_receipts (Inward)
-// and outward_picks (Outward) normalized into one shape so the History page
+// One row of the combined Inward/Picking history — inward_receipts (Inward)
+// and picks (Picking) normalized into one shape so the History page
 // can filter and sort them together. Inward confirms made before
 // inward_receipts existed only live in placement_logs (one row per tire, no
 // Plan No) — those are folded in too so older history doesn't disappear.
@@ -29,7 +29,7 @@ export interface HistoryRow {
 // Inward's location is written as "<Warehouse Label> - Bin <code>" (see
 // locationForBin in warehouse-bins.ts) — split back into its two parts so
 // History can show Warehouse and Location separately, the same shape
-// Outward's rows already come in.
+// Picking's rows already come in.
 function splitInwardLocation(location: string | null | undefined): { warehouse: string; location: string } {
   if (!location) return { warehouse: "—", location: "—" };
   const marker = " - Bin ";
@@ -49,13 +49,13 @@ export function localDateKey(iso: string): string {
   return `${y}-${m}-${day}`;
 }
 
-// Fetches every Inward receipt and Outward pick ever recorded (plus legacy
+// Fetches every Inward receipt and Pick ever recorded (plus legacy
 // pre-receipt Inward placements) and merges them into one list sorted
 // newest-first.
 export async function fetchHistoryRows(): Promise<HistoryRow[]> {
   const [receipts, picks, logs, tires] = await Promise.all([
     fetchInwardReceipts(),
-    fetchOutwardPicks(),
+    fetchPicks(),
     fetchPlacementLogs(),
     fetchTires(),
   ]);
@@ -108,9 +108,9 @@ export async function fetchHistoryRows(): Promise<HistoryRow[]> {
       };
     });
 
-  const outwardRows: HistoryRow[] = picks.map((p) => ({
+  const pickingRows: HistoryRow[] = picks.map((p) => ({
     id: p.id,
-    type: "outward",
+    type: "picking",
     at: p.pickedAt,
     material: p.material,
     description: p.description,
@@ -124,7 +124,7 @@ export async function fetchHistoryRows(): Promise<HistoryRow[]> {
     by: p.pickedBy,
   }));
 
-  return [...inwardRows, ...legacyInwardRows, ...outwardRows].sort((a, b) => b.at.localeCompare(a.at));
+  return [...inwardRows, ...legacyInwardRows, ...pickingRows].sort((a, b) => b.at.localeCompare(a.at));
 }
 
 // One aggregated line within a batch — every raw row sharing the same
@@ -142,7 +142,7 @@ export interface HistoryBatchLine {
 }
 
 // Everything done under one Plan No on one day, for one direction (Inward
-// or Outward) — possibly several confirms minutes apart, possibly from
+// or Picking) — possibly several confirms minutes apart, possibly from
 // different devices. Rows with no Plan No (older entries) fall back to one
 // batch per confirm.
 export interface HistoryBatch {
@@ -162,7 +162,7 @@ export interface HistoryBatch {
 
 // Regroups the flat history feed by (type, Plan No, local day). Rows without
 // a Plan No are grouped by exact timestamp instead — handleConfirm in
-// tire-inward.tsx / tire-outward.tsx computes `now` once and reuses it for
+// tire-inward.tsx / tire-picking.tsx computes `now` once and reuses it for
 // every row of a confirm, so (type, at) still identifies one confirm.
 export function groupHistoryRows(rows: HistoryRow[]): HistoryBatch[] {
   interface Acc {

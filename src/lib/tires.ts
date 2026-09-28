@@ -133,7 +133,7 @@ export async function insertTires(tires: Tire[]): Promise<{ error: string | null
   return { error: null };
 }
 
-// Insert-or-update by id — Inward/Outward/Dispatch each move a mix of
+// Insert-or-update by id — Inward/Picking/Dispatch each move a mix of
 // existing units (stage/location changes) and newly-synthesized ones in a
 // single action, so one upsert covers both.
 export async function upsertTires(tires: Tire[]): Promise<{ error: string | null }> {

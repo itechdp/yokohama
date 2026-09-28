@@ -33,7 +33,7 @@ export default function Home() {
 
         <h1 className="text-3xl font-semibold leading-snug text-white">
           Hi there, manage your <span className="text-warning">tyre warehouse</span> with ease —
-          Inward, Outward and beyond!
+          Inward, Picking and beyond!
         </h1>
         <p className="mt-2 text-[11px] text-white/60">Photo by Robert Laursoo on Unsplash</p>
       </div>
@@ -55,7 +55,7 @@ export default function Home() {
           >
             <div>
               <p className="text-sm font-semibold text-foreground">One tap away</p>
-              <p className="text-xs text-muted-foreground">Start an inward or outward move</p>
+              <p className="text-xs text-muted-foreground">Start an inward or picking move</p>
             </div>
             <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
               <ArrowUpRight className="size-4" />

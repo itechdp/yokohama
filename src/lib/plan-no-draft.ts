@@ -1,7 +1,7 @@
 import type { PlanNoKind } from "@/lib/plan-numbers";
 
 // Remembers whatever Plan No is currently typed/selected on screen, per
-// device and per flow (Inward/Outward kept separate — see PlanNoKind), so it
+// device and per flow (Inward/Picking kept separate — see PlanNoKind), so it
 // survives navigating away and back or reloading the page — it only changes
 // when the operator actually edits it. This is purely a per-device draft:
 // the dropdown of *which* plan numbers exist is still entirely DB-backed

@@ -9,13 +9,13 @@ import SelectMenu from "@/components/select-menu";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import type { WarehouseDef } from "@/data/warehouse-bins";
-import { fetchOngoingOutwardPlans, insertOutwardPicks, type OngoingOutwardPlan } from "@/lib/outward-picks";
+import { fetchOngoingPickingPlans, insertPicks, type OngoingPickingPlan } from "@/lib/picks";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
 import { touchPlanNumber } from "@/lib/plan-numbers";
 import { fetchTireBySkuQrCode } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { TireSkuRow } from "@/lib/supabase";
-import type { OutwardPick } from "@/types/tire";
+import type { PickingRecord } from "@/types/tire";
 
 // A tire type selected for this pick batch, with its own quantity — mirrors
 // Inward's SelectedTire exactly, right down to the per-tire qty stepper. No
@@ -50,27 +50,27 @@ const SHIFT_OPTIONS = [
   { value: "3", label: "Shift 3" },
 ];
 
-export default function TireOutward() {
+export default function TirePicking() {
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
-  // Groups every Outward confirmed today under one Plan No. Which plan
+  // Groups every Picking confirmed today under one Plan No. Which plan
   // numbers *exist* is entirely DB-backed (plan_numbers, touched on
   // confirm); this is just which one is currently on screen, remembered
   // per device (plan-no-draft.ts) so it stays put across page visits until
   // the operator actually clears/changes it — not reset to blank each time.
-  const [planNo, setPlanNo] = useState(() => getStoredPlanNo("outward"));
+  const [planNo, setPlanNo] = useState(() => getStoredPlanNo("picking"));
   const [pickerName, setPickerName] = useState("");
   const [shift, setShift] = useState("");
   const handlePlanNoChange = (value: string) => {
     setPlanNo(value);
-    setStoredPlanNo("outward", value);
+    setStoredPlanNo("picking", value);
   };
 
   // Every plan picked under so far, latest first — choosing one fills in the rest of
   // Plan details from that plan's latest pick.
-  const [ongoingPlans, setOngoingPlans] = useState<OngoingOutwardPlan[]>([]);
+  const [ongoingPlans, setOngoingPlans] = useState<OngoingPickingPlan[]>([]);
   const loadOngoingPlans = () => {
-    fetchOngoingOutwardPlans().then(setOngoingPlans);
+    fetchOngoingPickingPlans().then(setOngoingPlans);
   };
   const selectOngoingPlan = (value: string) => {
     const plan = ongoingPlans.find((p) => p.planNo === value);
@@ -212,7 +212,7 @@ export default function TireOutward() {
     setConfirmError(null);
 
     const now = new Date().toISOString();
-    const rows: OutwardPick[] = pickEntries.map((p, idx) => ({
+    const rows: PickingRecord[] = pickEntries.map((p, idx) => ({
       id: `op-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
       material: p.material,
       description: p.description,
@@ -228,14 +228,14 @@ export default function TireOutward() {
       notes: "",
     }));
 
-    const { error } = await insertOutwardPicks(rows);
+    const { error } = await insertPicks(rows);
     setSubmitting(false);
     if (error) {
-      setConfirmError(`Failed to record outward pick: ${error}`);
+      setConfirmError(`Failed to record pick: ${error}`);
       return;
     }
 
-    void touchPlanNumber(planNo.trim(), "outward");
+    void touchPlanNumber(planNo.trim(), "picking");
     loadOngoingPlans();
 
     setPickEntries([]);
@@ -249,7 +249,7 @@ export default function TireOutward() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
             <ArrowUpFromLine className="size-6 text-primary" />
-            Outward
+            Picking
           </h1>
         </div>
         <Link
@@ -290,7 +290,7 @@ export default function TireOutward() {
         </label>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium text-foreground">Plan No</span>
-          <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="outward" />
+          <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="picking" />
         </label>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium text-foreground">Shift</span>
@@ -481,7 +481,7 @@ export default function TireOutward() {
         disabled={pickEntries.length === 0 || !planNo.trim() || !shift || submitting}
         className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        {submitting ? "Confirming…" : "OK - Confirm outward"}
+        {submitting ? "Confirming…" : "OK - Confirm picking"}
       </button>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />

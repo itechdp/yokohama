@@ -8,8 +8,8 @@
  * Location / Real Time -Auto. SKU Code shows the Material and its tire
  * description together, one below the other in the same cell.
  *
- * The main table is populated from whatever Outward pick was just
- * confirmed — see tire-outward.tsx.
+ * The main table is populated from whatever pick was just
+ * confirmed — see tire-picking.tsx.
  */
 
 import ExcelJS from "exceljs";

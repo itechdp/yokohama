@@ -1,5 +1,5 @@
 // Midnight today, local time, as an ISO string — the cutoff every "today
-// only" query (Plan Nos, Inward receipts, Outward picks) filters against, so
+// only" query (Plan Nos, Inward receipts, Picks) filters against, so
 // a previous day's rows stop showing up with no cleanup job required.
 export function startOfTodayIso(): string {
   const d = new Date();

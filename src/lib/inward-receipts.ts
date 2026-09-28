@@ -66,7 +66,7 @@ export async function insertInwardReceipts(rows: InwardReceipt[]): Promise<{ err
 }
 
 // Full Inward receipt history — used by the History page to group entries
-// by Plan No. Newest first, same ordering convention as fetchOutwardPicks.
+// by Plan No. Newest first, same ordering convention as fetchPicks.
 export async function fetchInwardReceipts(): Promise<InwardReceipt[]> {
   const { data, error } = await supabase.from("inward_receipts").select("*").order("received_at", { ascending: false });
   if (error) {
