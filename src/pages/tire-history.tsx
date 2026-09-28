@@ -268,7 +268,7 @@ export default function TireHistory() {
               // A plan can span several pallets across its confirms — list each once.
               const pallets = Array.from(new Set(b.lines.map((l) => l.palletNo).filter(Boolean)));
               const fields = [
-                { label: "Plan No", value: b.planNo },
+                { label: b.type === "inward" ? "Sheet No" : "Plan No", value: b.planNo },
                 { label: "Pallet No", value: pallets.join(", ") },
                 { label: "Shift", value: b.shift },
                 { label: b.type === "inward" ? "Supervisor" : "Picker Name", value: b.pickerName },
