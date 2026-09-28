@@ -4,6 +4,7 @@ import { AlertTriangle, Download, Loader2, PackageSearch, Search, Warehouse as W
 import { cn } from "@/lib/utils";
 import ExportMenu from "@/components/export-menu";
 import SelectMenu from "@/components/select-menu";
+import RequiredMark from "@/components/required-mark";
 import { binForLocation, type WarehouseDef } from "@/data/warehouse-bins";
 import {
   exportStockToExcel,
@@ -415,7 +416,7 @@ export default function TireStock() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="flex gap-3 sm:contents">
                 <label className="block flex-1 min-w-0 space-y-1.5">
-                  <span className="text-sm font-medium text-foreground">Select Row</span>
+                  <span className="text-sm font-medium text-foreground">Select Row<RequiredMark /></span>
                   <SelectMenu
                     value={col}
                     placeholder="Select row"
@@ -426,7 +427,7 @@ export default function TireStock() {
                 </label>
 
                 <label className="block flex-1 min-w-0 space-y-1.5">
-                  <span className="text-sm font-medium text-foreground">Select Position</span>
+                  <span className="text-sm font-medium text-foreground">Select Position<RequiredMark /></span>
                   <SelectMenu
                     value={row}
                     placeholder="Select position"

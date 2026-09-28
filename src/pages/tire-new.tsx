@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Save, UploadCloud } from "lucide-react";
+import RequiredMark from "@/components/required-mark";
 import { insertTires } from "@/lib/tires";
 import { searchTireSkus, upsertTireSkus } from "@/lib/tire-skus";
 import type { TireSkuRow } from "@/lib/supabase";
@@ -124,7 +125,7 @@ export default function TireNew() {
       <form onSubmit={handleSubmit} className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="relative space-y-1">
-            <label className="text-sm font-medium text-foreground">Material</label>
+            <label className="text-sm font-medium text-foreground">Material<RequiredMark /></label>
             <input
               type="text"
               value={form.material}
@@ -201,7 +202,10 @@ function Field({
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-sm font-medium text-foreground">{label}</label>
+      <label className="text-sm font-medium text-foreground">
+        {label}
+        {required && <RequiredMark />}
+      </label>
       <input
         type={type}
         value={value}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Check, Grid3x3, Pencil, Plus, Trash2, Warehouse as WarehouseIcon, X } from "lucide-react";
 import ConfirmDialog from "@/components/confirm-dialog";
+import RequiredMark from "@/components/required-mark";
 import { deleteWarehouse, fetchWarehouses, upsertWarehouse } from "@/lib/warehouses";
 import type { WarehouseDef } from "@/data/warehouse-bins";
 
@@ -160,7 +161,7 @@ export default function Warehouses() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Label</label>
+              <label className="text-xs font-medium text-muted-foreground">Label<RequiredMark /></label>
               <input
                 type="text"
                 value={form.label}
@@ -170,7 +171,7 @@ export default function Warehouses() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Bin prefix</label>
+              <label className="text-xs font-medium text-muted-foreground">Bin prefix<RequiredMark /></label>
               <input
                 type="text"
                 value={form.prefix}
@@ -187,6 +188,7 @@ export default function Warehouses() {
               <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                 <Grid3x3 className="size-3.5" />
                 Columns ({form.columnRowCounts.length})
+                <RequiredMark />
               </label>
               <button
                 type="button"

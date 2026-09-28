@@ -132,16 +132,22 @@ export default function StockLocationList({
               <div className="shrink-0">
                 <QtyStepper value={taking} min={0} max={c.inStock} onChange={(v) => onQtyChange(c.key, v)} />
               </div>
-              <input
-                type="text"
-                value={palletNo[c.key] ?? ""}
-                onChange={(e) => onPalletNoChange(c.key, e.target.value)}
-                placeholder="Pallet no"
-                disabled={taking === 0}
-                aria-label={`Pallet no for ${c.code}`}
-                autoComplete="off"
-                className="min-w-24 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-              />
+              <div className="relative min-w-24 flex-1">
+                <input
+                  type="text"
+                  value={palletNo[c.key] ?? ""}
+                  onChange={(e) => onPalletNoChange(c.key, e.target.value)}
+                  placeholder="Pallet no"
+                  disabled={taking === 0}
+                  aria-label={`Pallet no for ${c.code}`}
+                  aria-required="true"
+                  autoComplete="off"
+                  className="w-full rounded-xl border border-border bg-card py-2 pl-3 pr-6 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-danger" aria-hidden="true">
+                  *
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => onAction(c)}

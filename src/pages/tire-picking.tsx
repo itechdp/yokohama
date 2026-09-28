@@ -7,6 +7,7 @@ import SelectMenu from "@/components/select-menu";
 import StockLocationList, { buildStockCards, qtyToTake, type StockCard } from "@/components/stock-location-list";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
+import RequiredMark from "@/components/required-mark";
 import type { WarehouseDef } from "@/data/warehouse-bins";
 import { useStockLocations } from "@/hooks/use-stock-locations";
 import { fetchOngoingPickingPlans, insertPicks, type OngoingPickingPlan } from "@/lib/picks";
@@ -208,7 +209,7 @@ export default function TirePicking() {
         <h2 className="text-base font-medium text-foreground">1. Plan details</h2>
         <div className="grid grid-cols-2 gap-3">
           <label className="block min-w-0 space-y-1.5">
-            <span className="text-sm font-medium text-foreground">Plan No</span>
+            <span className="text-sm font-medium text-foreground">Plan No<RequiredMark /></span>
             <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="picking" />
           </label>
           <label className="block min-w-0 space-y-1.5">
@@ -237,7 +238,7 @@ export default function TirePicking() {
           />
         </label>
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Shift</span>
+          <span className="text-sm font-medium text-foreground">Shift<RequiredMark /></span>
           <SelectMenu value={shift} placeholder="Select shift" options={SHIFT_OPTIONS} onChange={setShift} />
         </label>
       </div>

@@ -9,6 +9,7 @@ import QtyStepper from "@/components/qty-stepper";
 import SelectMenu from "@/components/select-menu";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
+import RequiredMark from "@/components/required-mark";
 import { firstBin, locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertInwardReceipts } from "@/lib/inward-receipts";
 import { insertPlacementLogs } from "@/lib/placement-logs";
@@ -360,11 +361,11 @@ export default function TireInward() {
           />
         </label>
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Sheet No</span>
+          <span className="text-sm font-medium text-foreground">Sheet No<RequiredMark /></span>
           <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="inward" />
         </label>
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Shift</span>
+          <span className="text-sm font-medium text-foreground">Shift<RequiredMark /></span>
           <SelectMenu value={shift} placeholder="Select shift" options={SHIFT_OPTIONS} onChange={setShift} />
         </label>
       </div>
@@ -407,7 +408,7 @@ export default function TireInward() {
                 </div>
                 <QtyStepper value={t.qty} onChange={(v) => setQty(t.key, v)} />
                 <label className="block space-y-1.5">
-                  <span className="text-sm font-medium text-foreground">Pallet No</span>
+                  <span className="text-sm font-medium text-foreground">Pallet No<RequiredMark /></span>
                   <input
                     type="text"
                     value={t.palletNo}

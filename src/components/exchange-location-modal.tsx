@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowLeftRight, X } from "lucide-react";
 import SelectMenu from "@/components/select-menu";
+import RequiredMark from "@/components/required-mark";
 import { cn } from "@/lib/utils";
 import { locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertPlacementLogs } from "@/lib/placement-logs";
@@ -254,7 +255,7 @@ function LocationFormCard({
       <p className="text-sm font-semibold text-foreground">{title}</p>
 
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-muted-foreground">Warehouse</label>
+        <label className="text-xs font-medium text-muted-foreground">Warehouse<RequiredMark /></label>
         <SelectMenu
           value={form.warehouseKey}
           placeholder="Select warehouse"
@@ -265,7 +266,7 @@ function LocationFormCard({
 
       {showTireSelect && (
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Select Tire</label>
+          <label className="text-xs font-medium text-muted-foreground">Select Tire<RequiredMark /></label>
           <SelectMenu
             value={form.material}
             disabled={!warehouse}
@@ -278,7 +279,7 @@ function LocationFormCard({
 
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Select Row</label>
+          <label className="text-xs font-medium text-muted-foreground">Select Row<RequiredMark /></label>
           <SelectMenu
             value={form.col}
             disabled={!warehouse || tireGate}
@@ -289,7 +290,7 @@ function LocationFormCard({
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Select Position</label>
+          <label className="text-xs font-medium text-muted-foreground">Select Position<RequiredMark /></label>
           <SelectMenu
             value={form.row}
             disabled={!form.col}
