@@ -62,6 +62,23 @@ export function binCounts(warehouse: WarehouseDef, tires: { currentStage: string
   return counts;
 }
 
+// Which warehouse a raw bin code (e.g. "B03-26", no warehouse label prefix —
+// what an uploaded stock sheet's LOCATION column holds) belongs to, by
+// matching its own prefix. Longest-matching prefix wins so e.g. "AM" isn't
+// shadowed by a coincidental "A" warehouse. Returns null if no warehouse's
+// prefix matches, or the remainder after the prefix isn't a NN-NN bin code.
+export function warehouseForBinCode(warehouses: WarehouseDef[], bin: string): WarehouseDef | null {
+  const trimmed = bin.trim();
+  let best: WarehouseDef | null = null;
+  for (const w of warehouses) {
+    if (!trimmed.startsWith(w.prefix)) continue;
+    const rest = trimmed.slice(w.prefix.length);
+    if (!/^\d+-\d+$/.test(rest)) continue;
+    if (!best || w.prefix.length > best.prefix.length) best = w;
+  }
+  return best;
+}
+
 // First bin in the warehouse — used to auto-place stock when the operator
 // hasn't tapped a specific bin, so confirming never blocks on a missing pick.
 // Bins have no capacity limit, so there's no need to look for one with room.

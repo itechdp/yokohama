@@ -18,10 +18,10 @@ export interface StockCard {
 
 export const stockCardKey = (material: string, location: string) => `${material}|${location}`;
 
-// Quantity to take from a card: prefilled with everything in stock there
-// until the operator changes it, and never more than what's there.
+// Quantity to take from a card: starts at 0 so nothing leaves stock until
+// the operator sets it, and never more than what's there.
 export const qtyToTake = (qty: Record<string, number>, card: StockCard) =>
-  Math.min(qty[card.key] ?? card.inStock, card.inStock);
+  Math.min(qty[card.key] ?? 0, card.inStock);
 
 // Every location holding each selected tire, in warehouse order then by bin
 // code. Locations with nothing in stock simply aren't in the map, so they

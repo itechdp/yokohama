@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowDownToLine, ArrowLeftRight, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, FileSpreadsheet, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ExchangeLocationModal from "@/components/exchange-location-modal";
+import InwardUploadModal from "@/components/inward-upload-modal";
 import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
 import QtyStepper from "@/components/qty-stepper";
@@ -10,7 +11,7 @@ import SelectMenu from "@/components/select-menu";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import RequiredMark from "@/components/required-mark";
-import { firstBin, locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
+import { locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
 import { insertInwardReceipts } from "@/lib/inward-receipts";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
@@ -30,6 +31,16 @@ interface SelectedTire {
   plyRatingBottom?: string;
   qty: number;
   palletNo: string;
+}
+
+// One staged entry: its own tires (with pallet nos), warehouse and locations.
+// Entries are only written to the database when the final Inward button is
+// pressed, so an operator can stage several before committing.
+interface InwardEntry {
+  id: string;
+  tires: SelectedTire[];
+  warehouse: WarehouseDef;
+  bins: string[];
 }
 
 const SHIFT_OPTIONS = [
@@ -62,11 +73,14 @@ export default function TireInward() {
   const [manualCol, setManualCol] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
 
+  const [entries, setEntries] = useState<InwardEntry[]>([]);
+
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [scanningTire, setScanningTire] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   useEffect(() => {
     fetchTires().then(setTires);
@@ -155,96 +169,131 @@ export default function TireInward() {
   const addManualLocation = () => {
     if (!selectedWarehouse || !manualRow || !manualCol) return;
     const code = `${selectedWarehouse.prefix}${String(Number(manualCol)).padStart(2, "0")}-${String(Number(manualRow)).padStart(2, "0")}`;
-    if (selectedBins.has(code)) {
-      setManualError("Location already selected");
-      return;
-    }
-    setSelectedBins((prev) => new Set(prev).add(code));
+    // One location per entry — adding another replaces it. Use a separate
+    // entry for tires going to a different location.
+    setSelectedBins(new Set([code]));
     setManualRow("");
     setManualCol("");
     setManualError(null);
   };
 
-  const handleConfirm = async () => {
-    if (submitting) return;
+  // "Confirm" — stages the current tires + warehouse + locations as one entry
+  // and clears steps 2-4 for the next one. Nothing is saved yet.
+  const handleAddEntry = () => {
+    setConfirmError(null);
+    if (selectedTires.length === 0 || !selectedWarehouse) return;
+    if (!allPalletNosFilled) {
+      setConfirmError("Fill in a pallet no for every tire before confirming.");
+      return;
+    }
+    // One location per entry, and it must be added explicitly — never guessed,
+    // so the sheet's LOCATION is always where the operator put the tires.
+    const bins = Array.from(selectedBins);
+    if (bins.length === 0) {
+      setConfirmError("Add a storage location before confirming.");
+      return;
+    }
+    setEntries((prev) => [
+      ...prev,
+      { id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, tires: selectedTires, warehouse: selectedWarehouse, bins },
+    ]);
+    setSelectedTires([]);
+    setSelectedBins(new Set());
+    setManualRow("");
+    setManualCol("");
+    setManualError(null);
+  };
+
+  const removeEntry = (id: string) => setEntries((prev) => prev.filter((e) => e.id !== id));
+
+  // From the upload modal — each uploaded location becomes a staged entry,
+  // same as a manually-built one, appended straight into "5. Entries to
+  // inward" (nothing is saved to the database here).
+  const handleUploadImport = (imported: { tires: SelectedTire[]; warehouse: WarehouseDef; bins: string[] }[]) => {
+    setConfirmError(null);
+    setEntries((prev) => [
+      ...prev,
+      ...imported.map((e) => ({ id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...e })),
+    ]);
+    setSuccess(`${imported.length} entr${imported.length === 1 ? "y" : "ies"} added from file — review below, then press Inward.`);
+  };
+
+  // Final "Inward" — writes every staged entry under the shared plan details.
+  const handleInward = async () => {
+    if (submitting || entries.length === 0) return;
     setSubmitting(true);
     setSuccess(null);
     setConfirmError(null);
-    if (!planNo.trim() || !shift || !allPalletNosFilled) {
-      setConfirmError("Fill in plan no, shift and a pallet no for every tire before confirming.");
-      setSubmitting(false);
-      return;
-    }
-    if (selectedTires.length === 0 || !selectedWarehouse) {
-      setSubmitting(false);
-      return;
-    }
-
-    // No bin tapped — just use the first one so this never blocks. Bins have
-    // no capacity limit, so there's no need to look for one with room.
-    const binsArray = selectedBins.size > 0 ? Array.from(selectedBins).sort() : [firstBin(selectedWarehouse)].filter(Boolean) as string[];
-    if (binsArray.length === 0) {
+    if (!planNo.trim() || !shift) {
+      setConfirmError("Fill in sheet no and shift before inwarding.");
       setSubmitting(false);
       return;
     }
 
     const now = new Date().toISOString();
-    const assignments: { tireId: string; bin: string; model: string; material: string }[] = [];
+    const assignments: { tireId: string; bin: string; model: string; material: string; palletNo: string; warehouse: WarehouseDef }[] = [];
     const extraTires: Tire[] = [];
+    // Production-stage units already claimed by an earlier entry in this batch.
+    const usedIds = new Set<string>();
 
-    // Round-robin across the selected bins so multiple picked bins share the
-    // load evenly — no capacity cap, a bin can hold any number of tires.
-    let bi = 0;
-    const nextBin = (): string => {
-      const b = binsArray[bi % binsArray.length];
-      bi++;
-      return b;
-    };
+    for (const entry of entries) {
+      // Round-robin across the entry's bins so multiple picked bins share the
+      // load evenly — no capacity cap, a bin can hold any number of tires.
+      let bi = 0;
+      const nextBin = (): string => {
+        const b = entry.bins[bi % entry.bins.length];
+        bi++;
+        return b;
+      };
 
-    for (const t of selectedTires) {
-      // Consume any matching production-stage units already on record first,
-      // then synthesize the rest fresh from the tire catalog (Supabase).
-      const existingIds = tires
-        .filter((existing) => existing.currentStage === "production" && existing.serialNumber === t.material)
-        .slice(0, t.qty)
-        .map((existing) => existing.id);
+      for (const t of entry.tires) {
+        // Consume any matching production-stage units already on record first,
+        // then synthesize the rest fresh from the tire catalog (Supabase).
+        const existingIds = tires
+          .filter((existing) => existing.currentStage === "production" && existing.serialNumber === t.material && !usedIds.has(existing.id))
+          .slice(0, t.qty)
+          .map((existing) => existing.id);
 
-      for (const tireId of existingIds) {
-        assignments.push({ tireId, bin: nextBin(), model: t.model, material: t.material });
-      }
+        for (const tireId of existingIds) {
+          usedIds.add(tireId);
+          assignments.push({ tireId, bin: nextBin(), model: t.model, material: t.material, palletNo: t.palletNo.trim(), warehouse: entry.warehouse });
+        }
 
-      const shortfall = t.qty - existingIds.length;
-      for (let k = 0; k < shortfall; k++) {
-        const id = `t-${Date.now()}-${t.key}-${k}-${Math.random().toString(36).slice(2, 7)}`;
-        const tire = buildTireFromCatalogRow(
-          {
-            material: t.material,
-            description: t.model,
-            plyRatingBottom: t.plyRatingBottom || "",
-            brand: t.brand || "",
-            skuQrCode: "",
-          },
-          id,
-          now,
-        );
-        extraTires.push(tire);
-        assignments.push({ tireId: id, bin: nextBin(), model: t.model, material: t.material });
+        const shortfall = t.qty - existingIds.length;
+        for (let k = 0; k < shortfall; k++) {
+          const id = `t-${Date.now()}-${entry.id}-${t.key}-${k}-${Math.random().toString(36).slice(2, 7)}`;
+          extraTires.push(
+            buildTireFromCatalogRow(
+              {
+                material: t.material,
+                description: t.model,
+                plyRatingBottom: t.plyRatingBottom || "",
+                brand: t.brand || "",
+                skuQrCode: "",
+              },
+              id,
+              now,
+            ),
+          );
+          assignments.push({ tireId: id, bin: nextBin(), model: t.model, material: t.material, palletNo: t.palletNo.trim(), warehouse: entry.warehouse });
+        }
       }
     }
 
-    const binByTireId = new Map(assignments.map((a) => [a.tireId, a.bin]));
+    const assignmentById = new Map(assignments.map((a) => [a.tireId, a]));
+    const locationOf = (a: { warehouse: WarehouseDef; bin: string }) => locationForBin(a.warehouse, a.bin);
     const changedExisting = tires
-      .filter((t) => binByTireId.has(t.id))
+      .filter((t) => usedIds.has(t.id))
       .map((t) => ({
         ...t,
         currentStage: "warehouse" as const,
-        location: locationForBin(selectedWarehouse, binByTireId.get(t.id)!),
+        location: locationOf(assignmentById.get(t.id)!),
         updatedAt: now,
       }));
     const newTireRows = extraTires.map((t) => ({
       ...t,
       currentStage: "warehouse" as const,
-      location: locationForBin(selectedWarehouse, binByTireId.get(t.id)!),
+      location: locationOf(assignmentById.get(t.id)!),
       updatedAt: now,
     }));
     const tiresToSave = [...changedExisting, ...newTireRows];
@@ -261,50 +310,50 @@ export default function TireInward() {
       id: `h-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
       tireId: a.tireId,
       stage: "warehouse",
-      location: locationForBin(selectedWarehouse, a.bin),
+      location: locationOf(a),
       movedAt: now,
       movedBy: "Forklift operator",
-      notes: `Inward: ${a.model} moved to ${locationForBin(selectedWarehouse, a.bin)}`,
+      notes: `Inward: ${a.model} moved to ${locationOf(a)}`,
     }));
 
     const newLogs: PlacementLog[] = assignments.map((a, idx) => ({
       id: `p-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
       tireId: a.tireId,
-      location: locationForBin(selectedWarehouse, a.bin),
+      location: locationOf(a),
       placedAt: now,
       placedBy: "Forklift operator",
-      notes: `Inward: ${a.model} moved to ${locationForBin(selectedWarehouse, a.bin)}`,
+      notes: `Inward: ${a.model} moved to ${locationOf(a)}`,
     }));
 
     await insertTireHistory(newHistory);
     await insertPlacementLogs(newLogs);
 
-    // One receipt row per distinct Material + bin in this confirm (5 of the
-    // same tire in the same bin becomes one row with Qty 5, not duplicate
-    // rows — but different bins stay separate rows, so LOCATION on the
-    // exported sheet is always exact), persisted under the active Plan No so
-    // the export below — and any later confirm made under the same plan no
-    // today — can pull every receipt together instead of just this one.
-    const grouped = new Map<string, { material: string; location: string; qty: number }>();
+    // One receipt row per distinct Material + pallet + bin across the batch
+    // (5 of the same tire in the same bin and pallet becomes one row with Qty
+    // 5 — but different bins or pallets stay separate rows, so LOCATION and
+    // PALLET on the exported sheet are always exact), persisted under the
+    // active Plan No so the export — and any later inward under the same plan
+    // no today — can pull every receipt together.
+    const grouped = new Map<string, { material: string; model: string; palletNo: string; warehouse: string; location: string; qty: number }>();
     for (const a of assignments) {
-      const location = locationForBin(selectedWarehouse, a.bin);
-      const key = `${a.material}|${location}`;
+      const location = locationOf(a);
+      const key = `${a.material}|${a.palletNo}|${location}`;
       const existing = grouped.get(key);
       if (existing) {
         existing.qty += 1;
       } else {
-        grouped.set(key, { material: a.material, location, qty: 1 });
+        grouped.set(key, { material: a.material, model: a.model, palletNo: a.palletNo, warehouse: a.warehouse.label, location, qty: 1 });
       }
     }
     const receipts: InwardReceipt[] = Array.from(grouped.values()).map((g, idx) => ({
       id: `ir-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
       material: g.material,
-      description: selectedTires.find((t) => t.material === g.material)?.model ?? "",
-      warehouse: selectedWarehouse.label,
+      description: g.model,
+      warehouse: g.warehouse,
       location: g.location,
       quantity: g.qty,
       planNo: planNo.trim(),
-      palletNo: selectedTires.find((t) => t.material === g.material)?.palletNo.trim() ?? "",
+      palletNo: g.palletNo,
       shift,
       pickerName: pickerName.trim(),
       receivedAt: now,
@@ -312,7 +361,10 @@ export default function TireInward() {
       notes: "",
     }));
     const { error: receiptError } = await insertInwardReceipts(receipts);
-    if (receiptError) console.warn("Failed to record inward receipts for export:", receiptError);
+    if (receiptError) {
+      console.warn("Failed to record inward receipts for export:", receiptError);
+      setConfirmError(`Tires were placed in stock, but saving them to the Excel sheet failed: ${receiptError}`);
+    }
     void touchPlanNumber(planNo.trim(), "inward");
 
     setTires((prev) => {
@@ -320,10 +372,10 @@ export default function TireInward() {
       for (const t of tiresToSave) byId.set(t.id, t);
       return Array.from(byId.values());
     });
-    setSelectedTires([]);
-    setSelectedBins(new Set());
+    const entryCount = entries.length;
+    setEntries([]);
     setSuccess(
-      `${assignments.length} tire${assignments.length === 1 ? "" : "s"} across ${selectedTires.length} type${selectedTires.length === 1 ? "" : "s"} placed across ${binsArray.length} bin${binsArray.length === 1 ? "" : "s"} in ${selectedWarehouse.label}.`,
+      `${assignments.length} tire${assignments.length === 1 ? "" : "s"} inwarded across ${entryCount} entr${entryCount === 1 ? "y" : "ies"}.`,
     );
     setSubmitting(false);
   };
@@ -337,12 +389,22 @@ export default function TireInward() {
             Inward
           </h1>
         </div>
-        <Link
-          to="/"
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors shrink-0"
-        >
-          Back
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setUploadOpen(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+          >
+            <FileSpreadsheet className="size-4" />
+            Upload Excel
+          </button>
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+          >
+            Back
+          </Link>
+        </div>
       </div>
 
       {confirmError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{confirmError}</div>}
@@ -549,13 +611,13 @@ export default function TireInward() {
               disabled={!manualCol || !manualRow}
               className="w-full sm:w-auto rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              Add Location
+              {selectedBins.size > 0 ? "Change Location" : "Add Location"}
             </button>
 
             <div className="space-y-2">
-              <p className="text-sm font-medium text-foreground">Selected locations</p>
+              <p className="text-sm font-medium text-foreground">Selected location</p>
               {selectedBins.size === 0 ? (
-                <p className="text-sm text-muted-foreground">No locations selected yet.</p>
+                <p className="text-sm text-muted-foreground">No location added yet — choose a row and position, then press Add Location.</p>
               ) : (
                 <div className="space-y-2">
                   {Array.from(selectedBins)
@@ -584,11 +646,57 @@ export default function TireInward() {
       </div>
 
       <button
-        onClick={handleConfirm}
-        disabled={selectedTires.length === 0 || !planNo.trim() || !shift || !allPalletNosFilled || submitting}
+        type="button"
+        onClick={handleAddEntry}
+        disabled={selectedTires.length === 0 || !selectedWarehouse || !allPalletNosFilled || selectedBins.size === 0}
+        className="w-full rounded-xl border border-primary px-4 py-3.5 text-base font-semibold text-primary hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        OK - Confirm entry
+      </button>
+
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
+        <h2 className="text-base font-medium text-foreground">5. Entries to inward</h2>
+        {entries.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No entries confirmed yet.</p>
+        ) : (
+          <ul className="space-y-2">
+            {entries.map((e, i) => (
+              <li key={e.id} className="rounded-xl border border-border bg-card px-3 py-2 text-sm space-y-1">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-medium text-foreground">
+                    Entry {i + 1} · {e.warehouse.label} · {e.bins.join(", ")}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => removeEntry(e.id)}
+                    className="shrink-0 text-muted-foreground hover:text-danger"
+                    aria-label={`Remove entry ${i + 1}`}
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+                <ul className="divide-y divide-border border-t border-border">
+                  {e.tires.map((t) => (
+                    <li key={t.key} className="py-1.5">
+                      <p className="text-xs text-foreground break-words">{t.model}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Pallet {t.palletNo.trim()} · Qty {t.qty}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <button
+        onClick={handleInward}
+        disabled={entries.length === 0 || !planNo.trim() || !shift || submitting}
         className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        {submitting ? "Confirming…" : "OK - Confirm inward"}
+        {submitting ? "Inwarding…" : `Inward${entries.length > 0 ? ` (${entries.length} entr${entries.length === 1 ? "y" : "ies"})` : ""}`}
       </button>
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
@@ -617,6 +725,13 @@ export default function TireInward() {
           onClose={() => setScanningTire(false)}
         />
       )}
+
+      <InwardUploadModal
+        open={uploadOpen}
+        warehouses={warehouses}
+        onClose={() => setUploadOpen(false)}
+        onImport={handleUploadImport}
+      />
     </div>
   );
 }
