@@ -19,7 +19,7 @@ import {
 } from "@/lib/stock-export";
 import { addToStock, removeFromStock } from "@/lib/stock-adjust";
 import type { TireSkuRow } from "@/lib/supabase";
-import { fetchTires } from "@/lib/tires";
+import { deleteAllTires, fetchTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { Tire } from "@/types/tire";
 
@@ -377,6 +377,27 @@ export default function TireStock() {
   const [locationExportBusy, setLocationExportBusy] = useState(false);
   const [locationExportError, setLocationExportError] = useState<string | null>(null);
 
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
+  const [deleteAllBusy, setDeleteAllBusy] = useState(false);
+  const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
+
+  // Wipes every tire in the system — resets Inward/Outward/Picking stock to
+  // 0. Leaves the tire catalog and all past Inward/Outward/Picking history
+  // untouched (see deleteAllTires).
+  const handleDeleteAllStock = async () => {
+    if (deleteAllBusy) return;
+    setDeleteAllBusy(true);
+    setDeleteAllError(null);
+    const { error: deleteError } = await deleteAllTires();
+    setDeleteAllBusy(false);
+    if (deleteError) {
+      setDeleteAllError(`Failed to delete stock: ${deleteError}`);
+      return;
+    }
+    clearResults();
+    setTires([]);
+  };
+
   const handleGlobalExport = async (format: "pdf" | "excel") => {
     if (globalExportBusy) return;
     setGlobalExportBusy(true);
@@ -453,6 +474,18 @@ export default function TireStock() {
           <button
             type="button"
             onClick={() => {
+              setDeleteAllError(null);
+              setDeleteAllOpen(true);
+            }}
+            aria-label="Delete all stock"
+            title="Delete all stock"
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-danger/10 hover:text-danger transition-colors shrink-0"
+          >
+            <Trash2 className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
               setGlobalExportError(null);
               setGlobalExportOpen(true);
             }}
@@ -469,6 +502,8 @@ export default function TireStock() {
           </Link>
         </div>
       </div>
+
+      {deleteAllError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{deleteAllError}</div>}
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground flex items-center gap-1.5">
@@ -776,6 +811,19 @@ export default function TireStock() {
           if (target) void applyQty(target, 0);
         }}
         onCancel={() => setRemoveTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={deleteAllOpen}
+        title="Delete all stock?"
+        message="Are you sure?"
+        confirmLabel="Delete all"
+        destructive
+        onConfirm={() => {
+          setDeleteAllOpen(false);
+          void handleDeleteAllStock();
+        }}
+        onCancel={() => setDeleteAllOpen(false)}
       />
 
       <ExportMenu

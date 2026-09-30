@@ -181,6 +181,20 @@ export async function insertTires(tires: Tire[]): Promise<{ error: string | null
 // Insert-or-update by id — Inward/Picking/Outward each move a mix of
 // existing units (stage/location changes) and newly-synthesized ones in a
 // single action, so one upsert covers both.
+// Deletes every tire unit — production, warehouse (stock) and dispatch
+// stages alike — used by Stock's "Delete all stock" to reset Inward/Outward
+// counts back to 0. Does not touch tire_skus (the catalog) or any
+// inward_receipts/outwards/picks/tire_history rows, so past entries and the
+// list of tire models both stay intact.
+export async function deleteAllTires(): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("tires").delete().not("id", "is", null);
+  if (error) {
+    console.warn("tires delete-all failed:", error.message);
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
 export async function upsertTires(tires: Tire[]): Promise<{ error: string | null }> {
   if (tires.length === 0) return { error: null };
   const { error } = await supabase.from("tires").upsert(tires.map(toRow), { onConflict: "id" });
