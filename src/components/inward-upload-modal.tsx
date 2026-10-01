@@ -6,12 +6,11 @@ import { downloadInwardTemplate, INWARD_TEMPLATE_COLUMNS, parseInwardWorkbook, t
 import { fetchTireSkusByMaterials } from "@/lib/tire-skus";
 
 // Upload an Excel stock sheet instead of picking tires one at a time. Each
-// distinct LOCATION in the file becomes one staged Inward entry (same shape
-// the manual "Confirm entry" step produces) with every SKU at that location
-// as its own tire line — reviewed here, pallet nos fillable inline, before
-// anything is added to the Inward page's "Entries to inward" list. Nothing
-// is written to the database from this modal; the final "Inward" button on
-// the page does that, same as manually-built entries.
+// distinct LOCATION in the file becomes one Inward entry (same shape the
+// manual "Confirm entry" step produces) with every SKU at that location as
+// its own tire line — reviewed here, pallet nos fillable inline. The import
+// button hands the entries to the Inward page, which saves them to stock
+// straight away — the sheet's own columns are all that's needed.
 
 export interface UploadedTireLine {
   key: string;
@@ -288,8 +287,8 @@ export default function InwardUploadModal({
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {importableLocations.length > 0
-              ? `Add ${importableLocations.length} entr${importableLocations.length === 1 ? "y" : "ies"} (${totalTires} tires)`
-              : "Add entries"}
+              ? `Inward ${importableLocations.length} entr${importableLocations.length === 1 ? "y" : "ies"} (${totalTires} tires)`
+              : "Inward"}
           </button>
         </div>
       </div>

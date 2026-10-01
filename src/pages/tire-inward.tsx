@@ -206,25 +206,36 @@ export default function TireInward() {
 
   const removeEntry = (id: string) => setEntries((prev) => prev.filter((e) => e.id !== id));
 
-  // From the upload modal — each uploaded location becomes a staged entry,
-  // same as a manually-built one, appended straight into "5. Entries to
-  // inward" (nothing is saved to the database here).
-  const handleUploadImport = (imported: { tires: SelectedTire[]; warehouse: WarehouseDef; bins: string[] }[]) => {
+  // Why the staged entries can't be inwarded yet — shown under the Inward
+  // button instead of just greying it out.
+  const inwardBlockedReason = !planNo.trim() || !shift ? "Fill in Sheet No and Shift above to save to stock." : null;
+
+  // From the upload modal — each uploaded location becomes an entry, same as
+  // a manually-built one, and is inwarded (saved to stock) right away. The
+  // sheet's own LOCATION / PALLET / SKU / QTY are all an upload needs; Sheet
+  // No and Shift are recorded if filled in on the page but never required.
+  // The entries are staged first so a failed save leaves them in "5. Entries
+  // to inward" to retry instead of losing them.
+  const handleUploadImport = async (imported: { tires: SelectedTire[]; warehouse: WarehouseDef; bins: string[] }[]) => {
     setConfirmError(null);
-    setEntries((prev) => [
-      ...prev,
-      ...imported.map((e) => ({ id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...e })),
-    ]);
-    setSuccess(`${imported.length} entr${imported.length === 1 ? "y" : "ies"} added from file — review below, then press Inward.`);
+    const newEntries = imported.map((e) => ({ id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...e }));
+    setEntries((prev) => [...prev, ...newEntries]);
+    await saveEntries(newEntries, false);
   };
 
   // Final "Inward" — writes every staged entry under the shared plan details.
   const handleInward = async () => {
     if (submitting || entries.length === 0) return;
+    await saveEntries(entries, true);
+  };
+
+  // Writes the given entries to stock and drops them from the staged list.
+  const saveEntries = async (toSave: InwardEntry[], requirePlanDetails: boolean) => {
+    if (submitting || toSave.length === 0) return;
     setSubmitting(true);
     setSuccess(null);
     setConfirmError(null);
-    if (!planNo.trim() || !shift) {
+    if (requirePlanDetails && (!planNo.trim() || !shift)) {
       setConfirmError("Fill in sheet no and shift before inwarding.");
       setSubmitting(false);
       return;
@@ -236,7 +247,7 @@ export default function TireInward() {
     // Production-stage units already claimed by an earlier entry in this batch.
     const usedIds = new Set<string>();
 
-    for (const entry of entries) {
+    for (const entry of toSave) {
       // Round-robin across the entry's bins so multiple picked bins share the
       // load evenly — no capacity cap, a bin can hold any number of tires.
       let bi = 0;
@@ -372,8 +383,9 @@ export default function TireInward() {
       for (const t of tiresToSave) byId.set(t.id, t);
       return Array.from(byId.values());
     });
-    const entryCount = entries.length;
-    setEntries([]);
+    const entryCount = toSave.length;
+    const savedIds = new Set(toSave.map((e) => e.id));
+    setEntries((prev) => prev.filter((e) => !savedIds.has(e.id)));
     setSuccess(
       `${assignments.length} tire${assignments.length === 1 ? "" : "s"} inwarded across ${entryCount} entr${entryCount === 1 ? "y" : "ies"}.`,
     );
@@ -698,6 +710,7 @@ export default function TireInward() {
       >
         {submitting ? "Inwarding…" : `Inward${entries.length > 0 ? ` (${entries.length} entr${entries.length === 1 ? "y" : "ies"})` : ""}`}
       </button>
+      {entries.length > 0 && inwardBlockedReason && <p className="-mt-4 text-center text-sm text-danger">{inwardBlockedReason}</p>}
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
 
@@ -730,7 +743,7 @@ export default function TireInward() {
         open={uploadOpen}
         warehouses={warehouses}
         onClose={() => setUploadOpen(false)}
-        onImport={handleUploadImport}
+        onImport={(imported) => void handleUploadImport(imported)}
       />
     </div>
   );
