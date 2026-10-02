@@ -30,16 +30,25 @@ function buildAreaCode(warehouse: WarehouseDef, col: number, row: number): strin
   return `${warehouse.prefix}${String(col).padStart(2, "0")}-${String(row).padStart(2, "0")}`;
 }
 
+// Position dropdown value meaning "every position in the selected Row".
+const ALL_POSITIONS = "all";
+
 // Fresh Warehouse+Row+Position matches — shared by the Search button and the
 // location Export button so both can never disagree about what's "at this
 // location" (see requirement: search and export must use the same data).
 async function fetchTiresAtLocation(warehouse: WarehouseDef, col: string, row: string): Promise<Tire[]> {
-  const areaCode = buildAreaCode(warehouse, Number(col), Number(row));
+  const allPositions = row === ALL_POSITIONS;
+  const areaCode = allPositions
+    ? `${warehouse.prefix}${String(Number(col)).padStart(2, "0")}-`
+    : buildAreaCode(warehouse, Number(col), Number(row));
   const allTires = await fetchTires();
   return allTires.filter((t) => {
     if (t.currentStage !== "warehouse") return false;
     const bin = binForLocation(warehouse, t.location);
-    return !!bin && (bin === areaCode || bin.startsWith(`${areaCode}-`));
+    if (!bin) return false;
+    // "All positions": every position of this Row.
+    if (allPositions) return bin.startsWith(areaCode);
+    return bin === areaCode || bin.startsWith(`${areaCode}-`);
   });
 }
 
@@ -228,10 +237,16 @@ export default function TireStock() {
   const rowOptions = useMemo(() => {
     if (!selectedWarehouse || !col) return [];
     const max = selectedWarehouse.columnRowCounts[Number(col) - 1] ?? 0;
-    return Array.from({ length: max }, (_, i) => {
+    const positions = Array.from({ length: max }, (_, i) => {
       const n = areaCounts.get(buildAreaCode(selectedWarehouse, Number(col), i + 1)) ?? 0;
       return { value: String(i + 1), label: n > 0 ? `${i + 1} · ${tyresLabel(n)}` : String(i + 1) };
     });
+    let total = 0;
+    for (let i = 1; i <= max; i++) total += areaCounts.get(buildAreaCode(selectedWarehouse, Number(col), i)) ?? 0;
+    return [
+      { value: ALL_POSITIONS, label: total > 0 ? `All positions · ${tyresLabel(total)}` : "All positions" },
+      ...positions,
+    ];
   }, [selectedWarehouse, col, areaCounts]);
 
   // Same raw matches the search already found (Warehouse + Row + Position,
@@ -305,6 +320,7 @@ export default function TireStock() {
     }
   };
 
+  const isAllPositions = searchedLocation?.row === ALL_POSITIONS;
   const searchedWarehouse = searchedLocation ? warehouses.find((w) => w.key === searchedLocation.warehouseKey) ?? null : null;
 
   // Re-reads the searched location (and the dropdown counts) after a change.
@@ -377,6 +393,22 @@ export default function TireStock() {
   const [locationExportBusy, setLocationExportBusy] = useState(false);
   const [locationExportError, setLocationExportError] = useState<string | null>(null);
 
+  const [rowDeleteOpen, setRowDeleteOpen] = useState(false);
+  const [rowDeleteBusy, setRowDeleteBusy] = useState(false);
+
+  // Takes every tire out of every position of the searched Row. Only the
+  // tires go — the Row and its positions stay.
+  const handleDeleteRowTires = async () => {
+    if (rowDeleteBusy || !searchedWarehouse || !searchedLocation) return;
+    setRowDeleteBusy(true);
+    setAdjustError(null);
+    const fresh = await fetchTiresAtLocation(searchedWarehouse, searchedLocation.col, ALL_POSITIONS);
+    const { error: removeError } = await removeFromStock(fresh);
+    if (removeError) setAdjustError(removeError);
+    await refreshLocation();
+    setRowDeleteBusy(false);
+  };
+
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [deleteAllBusy, setDeleteAllBusy] = useState(false);
   const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
@@ -434,20 +466,21 @@ export default function TireStock() {
         setLocationExportError("No tyres available at this location.");
         return;
       }
+      const positionLabel = row === ALL_POSITIONS ? "All" : String(row);
       const rows: StockExportRow[] = grouped.map((g) => ({
         serialNumber: g.serialNumber,
         brand: g.brand,
         model: g.model,
         warehouse: selectedWarehouse.label,
         row: paddedCol,
-        position: String(row),
+        position: positionLabel,
         quantity: g.quantity,
       }));
-      const filenameBase = `stock-${sanitizeForFilename(selectedWarehouse.label)}-row-${paddedCol}-position-${row}`;
+      const filenameBase = `stock-${sanitizeForFilename(selectedWarehouse.label)}-row-${paddedCol}-position-${positionLabel}`;
       if (format === "pdf") {
         exportStockToPDF(rows, LOCATION_STOCK_EXPORT_COLUMNS, {
           title: "Tyres in Storage Location",
-          subtitleLines: [`Warehouse: ${selectedWarehouse.label}`, `Row: ${paddedCol}`, `Position: ${row}`],
+          subtitleLines: [`Warehouse: ${selectedWarehouse.label}`, `Row: ${paddedCol}`, `Position: ${positionLabel}`],
           filename: `${filenameBase}.pdf`,
         });
       } else {
@@ -620,7 +653,7 @@ export default function TireStock() {
             <button
               type="button"
               onClick={() => setAddOpen(true)}
-              disabled={addOpen || busySerial !== null}
+              disabled={addOpen || busySerial !== null || isAllPositions}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Plus className="size-4" />
@@ -635,9 +668,21 @@ export default function TireStock() {
               <span className="text-foreground font-medium">Row:</span> {searchedLocation.col}
             </p>
             <p>
-              <span className="text-foreground font-medium">Position:</span> {searchedLocation.row}
+              <span className="text-foreground font-medium">Position:</span> {isAllPositions ? "All" : searchedLocation.row}
             </p>
           </div>
+
+          {isAllPositions && results.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setRowDeleteOpen(true)}
+              disabled={busySerial !== null || rowDeleteBusy}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-danger/40 px-4 py-3 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-40 transition-colors"
+            >
+              {rowDeleteBusy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              Delete all tyres in Row {searchedLocation.col} (all positions)
+            </button>
+          )}
 
           {addOpen && (
             <div ref={addPanelRef} className="scroll-mt-4 rounded-xl border border-dashed border-border p-3 space-y-3">
@@ -717,7 +762,7 @@ export default function TireStock() {
               <p className="font-medium text-foreground">No tyres found</p>
               <p>
                 There are currently no tyres stored at {searchedLocation.warehouse} → Row {searchedLocation.col} → Position{" "}
-                {searchedLocation.row}.
+                {isAllPositions ? "(all positions)" : searchedLocation.row}.
               </p>
             </div>
           ) : (
@@ -735,11 +780,15 @@ export default function TireStock() {
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      {isAllPositions ? (
+                        <span className="text-sm text-muted-foreground">Qty: {g.quantity}</span>
+                      ) : (
                       <QtyStepper
                         value={draft}
                         min={1}
                         onChange={(v) => setDraftQty((prev) => ({ ...prev, [g.serialNumber]: v }))}
                       />
+                      )}
                       {changed && (
                         <>
                           <button
@@ -781,7 +830,7 @@ export default function TireStock() {
             </ul>
           )}
 
-          {!addOpen && (
+          {!addOpen && !isAllPositions && (
             <button
               type="button"
               onClick={() => setAddOpen(true)}
@@ -800,7 +849,7 @@ export default function TireStock() {
         title="Remove from this location?"
         message={
           removeTarget && searchedLocation
-            ? `All ${removeTarget.quantity} of ${removeTarget.model} will be taken out of stock at ${searchedLocation.warehouse} → Row ${searchedLocation.col} → Position ${searchedLocation.row}.`
+            ? `All ${removeTarget.quantity} of ${removeTarget.model} will be taken out of stock at ${searchedLocation.warehouse} → Row ${searchedLocation.col} → Position ${isAllPositions ? "(all positions)" : searchedLocation.row}.`
             : ""
         }
         confirmLabel="Remove"
@@ -811,6 +860,23 @@ export default function TireStock() {
           if (target) void applyQty(target, 0);
         }}
         onCancel={() => setRemoveTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={rowDeleteOpen}
+        title="Delete all tyres in this row?"
+        message={
+          searchedLocation
+            ? `Every tyre in ${searchedLocation.warehouse} → Row ${searchedLocation.col}, across all positions, will be taken out of stock. The positions themselves stay.`
+            : ""
+        }
+        confirmLabel="Delete tyres"
+        destructive
+        onConfirm={() => {
+          setRowDeleteOpen(false);
+          void handleDeleteRowTires();
+        }}
+        onCancel={() => setRowDeleteOpen(false)}
       />
 
       <ConfirmDialog
@@ -841,7 +907,7 @@ export default function TireStock() {
         title="Export Location"
         infoLines={
           selectedWarehouse && col && row
-            ? [`Warehouse: ${selectedWarehouse.label}`, `Row: ${String(col).padStart(2, "0")}`, `Position: ${row}`]
+            ? [`Warehouse: ${selectedWarehouse.label}`, `Row: ${String(col).padStart(2, "0")}`, `Position: ${row === ALL_POSITIONS ? "All" : row}`]
             : []
         }
         busy={locationExportBusy}
