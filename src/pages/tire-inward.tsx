@@ -639,7 +639,7 @@ export default function TireInward() {
                         key={code}
                         className="relative flex items-center justify-center rounded-xl border border-success/30 bg-success/10 px-10 py-3"
                       >
-                        <span className="text-lg font-semibold tracking-wide text-success">{code}</span>
+                        <span className="text-lg font-semibold tracking-wide text-foreground">{code}</span>
                         <button
                           type="button"
                           onClick={() => toggleBin(code)}
