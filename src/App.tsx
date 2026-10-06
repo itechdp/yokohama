@@ -1,8 +1,11 @@
 import { Route, Routes } from "react-router";
 import Layout from "@/components/layout";
+import ProtectedRoute from "@/components/protected-route";
+import AdminUsers from "@/pages/admin-users";
 import BayBooking from "@/pages/bay-booking";
 import BayHistory from "@/pages/bay-history";
 import Home from "@/pages/home";
+import Login from "@/pages/login";
 import PendingTyreDetail from "@/pages/pending-tyre-detail";
 import PendingTyrePlans from "@/pages/pending-tyre-plans";
 import PreparePlan from "@/pages/prepare-plan";
@@ -19,22 +22,30 @@ import Warehouses from "@/pages/warehouses";
 export default function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
-        <Route path="/" element={<Home />} />
-        <Route path="/tires/skus" element={<TireSkuCatalog />} />
-        <Route path="/tires/new" element={<TireNew />} />
-        <Route path="/tires/bulk-upload" element={<TireBulkUpload />} />
-        <Route path="/tires/inward" element={<TireInward />} />
-        <Route path="/plans" element={<PreparePlan />} />
-        <Route path="/tires/picking" element={<TirePicking />} />
-        <Route path="/tires/outward" element={<TireOutward />} />
-        <Route path="/tires/stock" element={<TireStock />} />
-        <Route path="/tires/history" element={<TireHistory />} />
-        <Route path="/bays" element={<BayBooking />} />
-        <Route path="/bays/history" element={<BayHistory />} />
-        <Route path="/bays/pending" element={<PendingTyrePlans />} />
-        <Route path="/bays/pending/:planNo" element={<PendingTyreDetail />} />
-        <Route path="/warehouses" element={<Warehouses />} />
+      <Route path="/login" element={<Login />} />
+
+      <Route element={<ProtectedRoute />}>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Home />} />
+          <Route path="/tires/skus" element={<TireSkuCatalog />} />
+          <Route path="/tires/new" element={<TireNew />} />
+          <Route path="/tires/bulk-upload" element={<TireBulkUpload />} />
+          <Route path="/tires/inward" element={<TireInward />} />
+          <Route path="/plans" element={<PreparePlan />} />
+          <Route path="/tires/picking" element={<TirePicking />} />
+          <Route path="/tires/outward" element={<TireOutward />} />
+          <Route path="/tires/stock" element={<TireStock />} />
+          <Route path="/tires/history" element={<TireHistory />} />
+          <Route path="/bays" element={<BayBooking />} />
+          <Route path="/bays/history" element={<BayHistory />} />
+          <Route path="/bays/pending" element={<PendingTyrePlans />} />
+          <Route path="/bays/pending/:planNo" element={<PendingTyreDetail />} />
+          <Route path="/warehouses" element={<Warehouses />} />
+
+          <Route element={<ProtectedRoute adminOnly />}>
+            <Route path="/admin/users" element={<AdminUsers />} />
+          </Route>
+        </Route>
       </Route>
     </Routes>
   );

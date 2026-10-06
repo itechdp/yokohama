@@ -7,6 +7,7 @@ import {
   LayoutGrid,
   List,
   PackageSearch,
+  ShieldCheck,
   Warehouse,
   type LucideIcon,
 } from "lucide-react";
@@ -15,6 +16,7 @@ export interface NavItem {
   to: string;
   label: string;
   icon: LucideIcon;
+  adminOnly?: boolean;
 }
 
 // The main entry points, shown as tap-friendly circles on the home screen.
@@ -31,4 +33,5 @@ export const FEATURE_ITEMS: NavItem[] = [
   { to: "/bays", label: "Loading Bay", icon: LayoutGrid },
   { to: "/bays/history", label: "Bay History", icon: History },
   { to: "/warehouses", label: "Warehouses", icon: Warehouse },
+  { to: "/admin/users", label: "Admin", icon: ShieldCheck, adminOnly: true },
 ];
