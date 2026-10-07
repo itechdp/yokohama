@@ -1,10 +1,11 @@
+import { fetchDeletedTires } from "@/lib/deleted-tires";
 import { fetchInwardReceipts } from "@/lib/inward-receipts";
 import { fetchOutwards } from "@/lib/outwards";
 import { fetchPicks } from "@/lib/picks";
 import { fetchPlacementLogs } from "@/lib/placement-logs";
 import { fetchTires } from "@/lib/tires";
 
-export type HistoryType = "inward" | "picking" | "outward";
+export type HistoryType = "inward" | "picking" | "outward" | "deleted";
 
 // One row of the combined Inward/Picking/Outward history — inward_receipts
 // (Inward), picks (Picking) and outwards (Outward) normalized into one shape so the History page
@@ -54,12 +55,13 @@ export function localDateKey(iso: string): string {
 // pre-receipt Inward placements) and merges them into one list sorted
 // newest-first.
 export async function fetchHistoryRows(): Promise<HistoryRow[]> {
-  const [receipts, picks, outwards, logs, tires] = await Promise.all([
+  const [receipts, picks, outwards, logs, tires, deleted] = await Promise.all([
     fetchInwardReceipts(),
     fetchPicks(),
     fetchOutwards(),
     fetchPlacementLogs(),
     fetchTires(),
+    fetchDeletedTires(),
   ]);
 
   const inwardRows: HistoryRow[] = receipts.map((r) => {
@@ -142,7 +144,25 @@ export async function fetchHistoryRows(): Promise<HistoryRow[]> {
     by: o.outwardBy,
   }));
 
-  return [...inwardRows, ...legacyInwardRows, ...pickingRows, ...outwardRows].sort((a, b) => b.at.localeCompare(a.at));
+  const deletedRows: HistoryRow[] = deleted.map((d) => ({
+    id: d.id,
+    type: "deleted",
+    at: d.deletedAt,
+    material: d.material,
+    description: d.description,
+    warehouse: d.warehouse || "—",
+    location: d.location || "—",
+    quantity: d.quantity,
+    planNo: d.planNo ?? "",
+    palletNo: "",
+    shift: "",
+    pickerName: d.deletedBy ?? "",
+    by: d.deletedBy,
+  }));
+
+  return [...inwardRows, ...legacyInwardRows, ...pickingRows, ...outwardRows, ...deletedRows].sort((a, b) =>
+    b.at.localeCompare(a.at),
+  );
 }
 
 // One aggregated line within a batch — every raw row sharing the same

@@ -195,6 +195,29 @@ export async function deleteAllTires(): Promise<{ error: string | null }> {
   return { error: null };
 }
 
+// Deletes every warehouse-stage tire unit at one exact Material+location —
+// used by Picking's per-card Delete button to permanently remove a tire
+// from a bin (unlike takeOutOfStock, which just moves stage/location).
+// Returns how many units were actually deleted so the caller can log that
+// count against the real DB state rather than whatever the UI last showed.
+export async function deleteTiresAtLocation(
+  material: string,
+  location: string,
+): Promise<{ deletedCount: number; error: string | null }> {
+  const { data, error } = await supabase
+    .from("tires")
+    .delete()
+    .eq("serial_number", material)
+    .eq("location", location)
+    .eq("current_stage", "warehouse")
+    .select("id");
+  if (error) {
+    console.warn("tires delete-at-location failed:", error.message);
+    return { deletedCount: 0, error: error.message };
+  }
+  return { deletedCount: data?.length ?? 0, error: null };
+}
+
 export async function upsertTires(tires: Tire[]): Promise<{ error: string | null }> {
   if (tires.length === 0) return { error: null };
   const { error } = await supabase.from("tires").upsert(tires.map(toRow), { onConflict: "id" });

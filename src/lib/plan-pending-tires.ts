@@ -66,3 +66,18 @@ export async function deletePlanPendingTire(id: number): Promise<{ error: string
   }
   return { error: null };
 }
+
+// Clears any outstanding reservation for this tire under this plan — used
+// when a tire is permanently deleted from a location (Picking's Delete
+// button), so the plan no longer expects tires that no longer exist.
+// No-ops if planNo is blank (nothing to clear).
+export async function deletePlanPendingTiresForTire(planNo: string, tire: string): Promise<{ error: string | null }> {
+  const trimmed = planNo.trim();
+  if (!trimmed) return { error: null };
+  const { error } = await supabase.from("plan_pending_tires").delete().eq("plan_no", trimmed).eq("tire", tire);
+  if (error) {
+    console.warn("plan_pending_tires delete-for-tire failed:", error.message);
+    return { error: error.message };
+  }
+  return { error: null };
+}

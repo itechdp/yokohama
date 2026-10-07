@@ -72,6 +72,7 @@ export default function StockLocationList({
   onAction,
   busyKey,
   blockedReason,
+  onDeleteRequest,
 }: {
   tires: { material: string }[];
   cards: StockCard[];
@@ -86,6 +87,10 @@ export default function StockLocationList({
   busyKey: string | null;
   // Why nothing can be confirmed yet (e.g. plan details missing).
   blockedReason?: string | null;
+  // When provided, shows a Delete button on every card that permanently
+  // wipes that tire out of that location (Picking page only — Outward
+  // doesn't pass this, so nothing renders there).
+  onDeleteRequest?: (card: StockCard) => void;
 }) {
   if (tires.length === 0) {
     return (
@@ -119,10 +124,20 @@ export default function StockLocationList({
           <div
             key={c.key}
             className={cn(
-              "rounded-xl border px-4 py-3 text-center space-y-2 transition-colors",
+              "relative rounded-xl border px-4 py-3 text-center space-y-2 transition-colors",
               taking > 0 ? "border-success bg-success/15" : "border-success/30 bg-success/5",
             )}
           >
+            {onDeleteRequest && (
+              <button
+                type="button"
+                onClick={() => onDeleteRequest(c)}
+                disabled={busyKey !== null}
+                className="absolute right-3 top-3 text-xs font-medium text-danger underline underline-offset-2 hover:text-danger/80 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Not in bin
+              </button>
+            )}
             <p className="text-lg font-semibold tracking-wide text-success">{c.code}</p>
             <p className="text-sm font-medium text-foreground truncate">{c.description}</p>
             <p className="text-xs text-muted-foreground truncate">

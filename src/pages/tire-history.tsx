@@ -11,8 +11,10 @@ import {
   History as HistoryIcon,
   Loader2,
   Search,
+  Trash2,
 } from "lucide-react";
 import SelectMenu from "@/components/select-menu";
+import { exportDeletedTiresExcel } from "@/lib/deleted-tires-excel-export";
 import {
   fetchHistoryRows,
   groupHistoryRows,
@@ -31,6 +33,7 @@ const TYPE_OPTIONS: { value: HistoryType | "all"; label: string }[] = [
   { value: "inward", label: "Inward" },
   { value: "picking", label: "Picking" },
   { value: "outward", label: "Outward" },
+  { value: "deleted", label: "Deleted" },
 ];
 
 function formatDateTime(iso: string): string {
@@ -123,7 +126,21 @@ export default function TireHistory() {
     try {
       const date = new Date(batch.at);
       const planNo = batch.planNo || undefined;
-      if (batch.type === "inward") {
+      if (batch.type === "deleted") {
+        await exportDeletedTiresExcel(
+          batch.lines.map((l) => ({
+            deletedAt: l.at,
+            material: l.material,
+            description: l.description,
+            warehouse: l.warehouse,
+            location: l.location,
+            quantity: l.quantity,
+            planNo: batch.planNo,
+            deletedBy: batch.pickerName,
+          })),
+          { dateFrom: localDateKey(batch.at), dateTo: localDateKey(batch.at) },
+        );
+      } else if (batch.type === "inward") {
         const formRows: InwardFormRow[] = batch.lines.map((l) => ({
           palletNo: l.palletNo,
           skuCode: skuCell(l.material, l.description),
@@ -175,14 +192,14 @@ export default function TireHistory() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <div className="flex rounded-xl border border-border bg-muted/40 p-1">
+        <div className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-muted/40 p-1">
           {TYPE_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type="button"
               onClick={() => setTypeFilter(opt.value)}
               className={cn(
-                "flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                "shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
                 typeFilter === opt.value ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -267,12 +284,18 @@ export default function TireHistory() {
             {pageBatches.map((b) => {
               // A plan can span several pallets across its confirms — list each once.
               const pallets = Array.from(new Set(b.lines.map((l) => l.palletNo).filter(Boolean)));
-              const fields = [
-                { label: b.type === "inward" ? "Sheet No" : "Plan No", value: b.planNo },
-                { label: "Pallet No", value: pallets.join(", ") },
-                { label: "Shift", value: b.shift },
-                { label: b.type === "inward" ? "Supervisor" : "Picker Name", value: b.pickerName },
-              ];
+              const fields =
+                b.type === "deleted"
+                  ? [
+                      { label: "Plan No", value: b.planNo },
+                      { label: "Deleted By", value: b.pickerName },
+                    ]
+                  : [
+                      { label: b.type === "inward" ? "Sheet No" : "Plan No", value: b.planNo },
+                      { label: "Pallet No", value: pallets.join(", ") },
+                      { label: "Shift", value: b.shift },
+                      { label: b.type === "inward" ? "Supervisor" : "Picker Name", value: b.pickerName },
+                    ];
               return (
                 <div key={b.key} className="rounded-2xl border border-border bg-card shadow-sm p-4 space-y-3">
                   <div className="flex items-center justify-between gap-2">
@@ -282,16 +305,19 @@ export default function TireHistory() {
                         b.type === "inward" && "bg-info/10 text-info",
                         b.type === "picking" && "bg-warning-soft text-warning",
                         b.type === "outward" && "bg-danger/10 text-danger",
+                        b.type === "deleted" && "bg-muted text-muted-foreground",
                       )}
                     >
                       {b.type === "inward" ? (
                         <ArrowDownToLine className="size-3" />
                       ) : b.type === "picking" ? (
                         <ClipboardList className="size-3" />
-                      ) : (
+                      ) : b.type === "outward" ? (
                         <ArrowUpFromLine className="size-3" />
+                      ) : (
+                        <Trash2 className="size-3" />
                       )}
-                      {b.type === "inward" ? "Inward" : b.type === "picking" ? "Picking" : "Outward"}
+                      {b.type === "inward" ? "Inward" : b.type === "picking" ? "Picking" : b.type === "outward" ? "Outward" : "Deleted"}
                     </span>
                     <div className="flex items-center gap-1 shrink-0">
                       <span className="text-xs text-muted-foreground">

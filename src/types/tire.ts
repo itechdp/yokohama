@@ -85,6 +85,25 @@ export interface OutwardRecord {
   notes: string;
 }
 
+// One tire-deletion record: "N of this tire were permanently wiped from this
+// location" — the Picking page's per-card Delete button, not a normal Pick
+// (the tires never left through dispatch, they were just removed from
+// stock). planNo/pickerName carry whatever was on the page at the time, for
+// context in the export, even though deleting doesn't require either.
+export interface DeletedTireRecord {
+  id: string;
+  material: string;
+  description: string;
+  warehouse: string;
+  location: string;
+  quantity: number;
+  planNo: string;
+  pickerName: string;
+  deletedAt: string;
+  deletedBy: string;
+  notes: string;
+}
+
 // One Inward receipt record: "this many of this tire arrived at this bin",
 // grouped by Material + bin within a single confirm — mirrors PickingRecord's
 // role for the other direction. Several of these, across several confirms

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ClipboardList, MapPin, QrCode, X } from "lucide-react";
+import ConfirmDialog from "@/components/confirm-dialog";
 import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
 import SelectMenu from "@/components/select-menu";
@@ -10,15 +11,17 @@ import TireCatalogSearch from "@/components/tire-catalog-search";
 import RequiredMark from "@/components/required-mark";
 import type { WarehouseDef } from "@/data/warehouse-bins";
 import { useStockLocations } from "@/hooks/use-stock-locations";
+import { insertDeletedTires } from "@/lib/deleted-tires";
 import { fetchOngoingPickingPlans, insertPicks, type OngoingPickingPlan } from "@/lib/picks";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
+import { deletePlanPendingTiresForTire } from "@/lib/plan-pending-tires";
 import { fetchPreparedPlans, type PreparedPlan } from "@/lib/prepared-plans";
 import { touchPlanNumber } from "@/lib/plan-numbers";
 import { takeOutOfStock } from "@/lib/stock-out";
-import { fetchTireBySkuQrCode } from "@/lib/tires";
+import { deleteTiresAtLocation, fetchTireBySkuQrCode } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { TireSkuRow } from "@/lib/supabase";
-import type { PickingRecord } from "@/types/tire";
+import type { DeletedTireRecord, PickingRecord } from "@/types/tire";
 
 // Selecting a tire lists every place it's in stock as a card, each with its
 // own quantity; confirming takes those quantities out of stock (see
@@ -113,6 +116,8 @@ export default function TirePicking() {
   // Location card currently being confirmed.
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  // Card pending the "Delete this tire from this location?" confirm dialog.
+  const [deleteTarget, setDeleteTarget] = useState<StockCard | null>(null);
 
   useEffect(() => {
     fetchWarehouses().then(setWarehouses);
@@ -215,6 +220,54 @@ export default function TirePicking() {
     setStockVersion((v) => v + 1);
     setBusyKey(null);
     setSuccess(`${qty} tire${qty === 1 ? "" : "s"} picked from ${card.code}.`);
+  };
+
+  // Permanently wipes every unit of a tire out of one location — not a
+  // Pick (the tires never go through dispatch), used for stock that should
+  // simply no longer exist here (e.g. damaged/scrapped). Also clears any
+  // outstanding plan_pending_tires reservation for this tire under the
+  // current plan no, and logs the deletion for History's "Deleted" tab.
+  const confirmDeleteCard = async () => {
+    const card = deleteTarget;
+    if (!card || busyKey) return;
+    setBusyKey(card.key);
+    setSuccess(null);
+    setConfirmError(null);
+
+    const trimmedPlanNo = planNo.trim();
+
+    const { deletedCount, error: deleteError } = await deleteTiresAtLocation(card.material, card.location);
+    if (deleteError) {
+      setConfirmError(deleteError);
+      setDeleteTarget(null);
+      setBusyKey(null);
+      return;
+    }
+
+    await deletePlanPendingTiresForTire(trimmedPlanNo, card.material);
+
+    const row: DeletedTireRecord = {
+      id: `del-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      material: card.material,
+      description: card.description,
+      warehouse: card.warehouseLabel,
+      location: card.code,
+      quantity: deletedCount,
+      planNo: trimmedPlanNo,
+      pickerName: pickerName.trim(),
+      deletedAt: new Date().toISOString(),
+      deletedBy: pickerName.trim(),
+      notes: "",
+    };
+    const { error: logError } = await insertDeletedTires([row]);
+    if (logError) {
+      setConfirmError(`Tire was deleted, but the deletion record failed to save: ${logError}`);
+    }
+
+    setDeleteTarget(null);
+    setStockVersion((v) => v + 1);
+    setBusyKey(null);
+    setSuccess(`${deletedCount} tire${deletedCount === 1 ? "" : "s"} deleted from ${card.code}.`);
   };
 
   return (
@@ -341,11 +394,26 @@ export default function TirePicking() {
           onAction={handleTake}
           busyKey={busyKey}
           blockedReason={blockedReason}
+          onDeleteRequest={setDeleteTarget}
         />
       </div>
 
 
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete this tire from this location?"
+        message={
+          deleteTarget
+            ? `This permanently removes all ${deleteTarget.inStock} of ${deleteTarget.material} at ${deleteTarget.code} from stock. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => void confirmDeleteCard()}
+        onCancel={() => setDeleteTarget(null)}
+      />
 
       {scanningTire && (
         <QrScanner
