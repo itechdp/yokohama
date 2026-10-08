@@ -9,6 +9,7 @@ import StockLocationList, { buildStockCards, qtyToTake, type StockCard } from "@
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import RequiredMark from "@/components/required-mark";
+import { useAuth } from "@/contexts/auth-context";
 import type { WarehouseDef } from "@/data/warehouse-bins";
 import { useStockLocations } from "@/hooks/use-stock-locations";
 import { insertDeletedTires } from "@/lib/deleted-tires";
@@ -43,6 +44,7 @@ const SHIFT_OPTIONS = [
 ];
 
 export default function TirePicking() {
+  const { user } = useAuth();
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
   // Groups every Picking confirmed today under one Plan No. Which plan
@@ -256,7 +258,9 @@ export default function TirePicking() {
       planNo: trimmedPlanNo,
       pickerName: pickerName.trim(),
       deletedAt: new Date().toISOString(),
-      deletedBy: pickerName.trim(),
+      // Who's actually logged in, not the free-text Picker Name field -
+      // that can be left blank or typed as anything, this can't.
+      deletedBy: user?.username ?? "",
       notes: "",
     };
     const { error: logError } = await insertDeletedTires([row]);
