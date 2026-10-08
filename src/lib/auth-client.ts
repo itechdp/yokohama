@@ -35,10 +35,12 @@ async function getJson<T>(path: string, token: string): Promise<T> {
   return data as T;
 }
 
+export type UserRole = "admin" | "operator";
+
 export interface SessionUser {
   id: string;
   username: string;
-  role: "admin" | "operator";
+  role: UserRole;
 }
 
 export function requestChallenge(username: string) {
@@ -58,7 +60,7 @@ export function login(params: {
 export interface AdminUserRow {
   id: string;
   username: string;
-  role: "admin" | "operator";
+  role: UserRole;
   is_active: boolean;
   device_registered: boolean;
   device_registered_at: string | null;
@@ -69,13 +71,22 @@ export function listUsers(token: string) {
   return getJson<{ users: AdminUserRow[] }>("/api/admin/users", token);
 }
 
-export function createUser(
-  token: string,
-  params: { username: string; password: string; role: "admin" | "operator" }
-) {
+export function createUser(token: string, params: { username: string; password: string; role: UserRole }) {
   return postJson<{ user: AdminUserRow }>("/api/admin/users", params, token);
 }
 
 export function resetDevice(token: string, userId: string) {
   return postJson<{ ok: true }>(`/api/admin/users/${userId}/reset-device`, {}, token);
+}
+
+export async function deleteUser(token: string, userId: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/admin/users/${userId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data?.error ?? "Request failed", res.status);
+  }
+  return data as { ok: true };
 }

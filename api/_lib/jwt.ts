@@ -17,10 +17,12 @@ export interface ChallengePayload {
   nonce: string;
 }
 
+export type UserRole = "admin" | "operator";
+
 export interface SessionUser {
   id: string;
   username: string;
-  role: "admin" | "operator";
+  role: UserRole;
 }
 
 // Short-lived (60s) signed token proving "this login attempt is fresh" for a

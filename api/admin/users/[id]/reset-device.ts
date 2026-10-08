@@ -17,6 +17,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  // No self-reset, for anyone - a device reset must always be traceable to
+  // a *different* person, or the whole point of device binding (proving who
+  // did what, from where) collapses.
+  if (id === admin.id) {
+    res.status(403).json({ error: "You cannot reset your own device. Ask another admin." });
+    return;
+  }
+
+  const { data: target, error: targetError } = await supabaseAdmin
+    .from("app_users")
+    .select("id, username")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (targetError || !target) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
   const { error } = await supabaseAdmin
     .from("app_users")
     .update({
@@ -30,6 +49,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (error) {
     res.status(500).json({ error: "Failed to reset device" });
     return;
+  }
+
+  // Audit trail - who reset whose device, and when.
+  const { error: logError } = await supabaseAdmin.from("device_reset_log").insert({
+    reset_by_user_id: admin.id,
+    reset_by_username: admin.username,
+    target_user_id: target.id,
+    target_username: target.username,
+  });
+  if (logError) {
+    console.warn("device_reset_log insert failed:", logError.message);
   }
 
   res.status(200).json({ ok: true });
