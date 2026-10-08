@@ -88,7 +88,7 @@ export default function BayBooking() {
         </h1>
         <Link
           to="/bays/pending"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
         >
           <ClipboardList className="size-4" />
           Pending Tyre
@@ -136,7 +136,7 @@ export default function BayBooking() {
             </thead>
             <tbody>
               {filteredRows.map((row) => (
-                <tr key={row.bay} className="bg-card even:bg-muted/30 hover:bg-muted/50 transition-colors">
+                <tr key={row.bay} className="bg-card even:bg-muted hover:bg-muted transition-colors">
                   <td className="border border-border px-1 py-1 text-center font-semibold text-foreground">
                     {row.bay}
                   </td>
@@ -152,7 +152,7 @@ export default function BayBooking() {
                       {row.planNo.trim() && (
                         <Link
                           to={`/bays/pending/${encodeURIComponent(row.planNo.trim())}`}
-                          className="inline-flex shrink-0 items-center justify-center rounded-md bg-primary p-1 text-white hover:bg-primary/90"
+                          className="inline-flex shrink-0 items-center justify-center rounded-md bg-primary p-1 text-white hover:bg-primary-hover"
                           aria-label={`Pending tyre for plan ${row.planNo.trim()}`}
                         >
                           <ArrowRight className="size-3" />
@@ -257,7 +257,7 @@ function FilterDropdown({ value, onChange }: { value: StatusFilter; onChange: (s
                 )}
               >
                 {s === "all" ? (
-                  <span className="size-2 shrink-0 rounded-full bg-muted-foreground/40" />
+                  <span className="size-2 shrink-0 rounded-full bg-muted-foreground" />
                 ) : (
                   <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT_STYLES[s])} />
                 )}

@@ -165,7 +165,7 @@ export default function PreparePlan() {
             <button
               type="button"
               onClick={startAdd}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover transition-colors"
             >
               <Plus className="size-4" />
               Add Plan
@@ -181,7 +181,7 @@ export default function PreparePlan() {
       </div>
 
       {error && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div>}
-      {notice && <div className="rounded-xl bg-success/10 px-3 py-2 text-sm text-success">{notice}</div>}
+      {notice && <div className="rounded-xl bg-success-soft px-3 py-2 text-sm text-success">{notice}</div>}
 
       {form && (
         <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-4">
@@ -240,7 +240,7 @@ export default function PreparePlan() {
               type="button"
               onClick={handleSave}
               disabled={!canSave}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
               {saving ? "Saving…" : "Save plan"}
@@ -329,7 +329,7 @@ export default function PreparePlan() {
                           <p className="text-foreground truncate">{l.description}</p>
                           <p className="text-xs text-muted-foreground truncate">{l.material}</p>
                         </div>
-                        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                        <span className="shrink-0 rounded-full bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary">
                           Qty {l.qty}
                         </span>
                       </li>

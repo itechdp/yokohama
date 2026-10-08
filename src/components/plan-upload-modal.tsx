@@ -120,7 +120,7 @@ export default function PlanUploadModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={close}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(0,0,0,0.4)] p-4" onClick={close}>
       <div
         role="dialog"
         aria-modal="true"
@@ -139,7 +139,7 @@ export default function PlanUploadModal({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          <div className="rounded-xl bg-muted/60 p-3 space-y-2 text-sm">
+          <div className="rounded-xl bg-muted p-3 space-y-2 text-sm">
             <p className="font-medium text-foreground">Format</p>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -223,7 +223,7 @@ export default function PlanUploadModal({
             preview.map((p) => {
               const good = p.lines.filter((l) => !l.missing);
               return (
-                <div key={p.planNo} className={cn("rounded-xl border", p.exists ? "border-warning/40 opacity-70" : "border-border")}>
+                <div key={p.planNo} className={cn("rounded-xl border", p.exists ? "border-warning-border opacity-70" : "border-border")}>
                   <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
                     <p className="font-semibold text-foreground">Plan {p.planNo}</p>
                     {p.exists ? (
@@ -265,7 +265,7 @@ export default function PlanUploadModal({
             type="button"
             onClick={handleSave}
             disabled={toSave.length === 0 || saving || reading}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {saving && <Loader2 className="size-4 animate-spin" />}
             {toSave.length > 0 ? `Save ${toSave.length} plan${toSave.length === 1 ? "" : "s"}` : "Save plans"}

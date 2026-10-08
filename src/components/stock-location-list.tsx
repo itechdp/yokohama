@@ -125,7 +125,7 @@ export default function StockLocationList({
             key={c.key}
             className={cn(
               "relative rounded-xl border px-4 py-3 text-center space-y-2 transition-colors",
-              taking > 0 ? "border-success bg-success/15" : "border-success/30 bg-success/5",
+              taking > 0 ? "border-success bg-success-soft" : "border-success-border bg-success-soft",
             )}
           >
             {onDeleteRequest && (
@@ -133,7 +133,7 @@ export default function StockLocationList({
                 type="button"
                 onClick={() => onDeleteRequest(c)}
                 disabled={busyKey !== null}
-                className="absolute right-3 top-3 text-xs font-medium text-danger underline underline-offset-2 hover:text-danger/80 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="absolute right-3 top-3 text-xs font-medium text-danger underline underline-offset-2 hover:text-danger disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Not in bin
               </button>
@@ -167,7 +167,7 @@ export default function StockLocationList({
                 type="button"
                 onClick={() => onAction(c)}
                 disabled={taking === 0 || !pallet || !!blockedReason || busyKey !== null}
-                className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {busy && <Loader2 className="size-4 animate-spin" />}
                 {actionLabel}

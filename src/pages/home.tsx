@@ -13,7 +13,7 @@ export default function Home() {
   const items = FEATURE_ITEMS.filter((item) => !item.adminOnly || user?.role === "admin");
 
   return (
-    <div className="min-h-full bg-primary/5">
+    <div className="min-h-full bg-primary-soft">
       <div
         className="relative bg-cover bg-center px-6 pb-8 pt-6"
         style={{
@@ -21,7 +21,7 @@ export default function Home() {
         }}
       >
         <header className="flex h-16 items-center justify-between gap-2">
-          <span className="rounded-full bg-black/30 px-3 py-1 text-lg font-extrabold tracking-wide text-white drop-shadow-md backdrop-blur-sm">
+          <span className="rounded-full bg-[rgba(0,0,0,0.3)] px-3 py-1 text-lg font-extrabold tracking-wide text-white drop-shadow-md backdrop-blur-sm">
             Crown Pvt. Ltd.
           </span>
           <div className="flex items-center gap-2">
@@ -29,7 +29,7 @@ export default function Home() {
               type="button"
               onClick={toggleTheme}
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              className="flex size-10 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-transform active:scale-95"
+              className="flex size-10 items-center justify-center rounded-full bg-[rgba(0,0,0,0.3)] text-white backdrop-blur-sm transition-transform active:scale-95"
             >
               {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
             </button>
@@ -37,7 +37,7 @@ export default function Home() {
               type="button"
               onClick={logout}
               aria-label="Log out"
-              className="flex size-10 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm transition-transform active:scale-95"
+              className="flex size-10 items-center justify-center rounded-full bg-[rgba(0,0,0,0.3)] text-white backdrop-blur-sm transition-transform active:scale-95"
             >
               <LogOut className="size-5" />
             </button>
@@ -48,7 +48,7 @@ export default function Home() {
           Hi there, manage your <span className="text-warning">tyre warehouse</span> with ease —
           Inward, Picking and beyond!
         </h1>
-        <p className="mt-2 text-[11px] text-white/60">Photo by Robert Laursoo on Unsplash</p>
+        <p className="mt-2 text-[11px] text-[rgba(255,255,255,0.6)]">Photo by Robert Laursoo on Unsplash</p>
       </div>
 
       <div className="px-6 pb-10 pt-8">

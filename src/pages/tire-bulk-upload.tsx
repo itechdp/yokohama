@@ -158,7 +158,7 @@ export default function TireBulkUpload() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary-hover transition-colors"
           >
             <FileSpreadsheet className="size-4" />
             Upload Excel file
@@ -253,7 +253,7 @@ export default function TireBulkUpload() {
         <button
           onClick={handleConfirm}
           disabled={uploading || parsedRows.length === 0}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {uploading ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
           {uploading

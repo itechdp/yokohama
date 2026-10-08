@@ -192,7 +192,7 @@ export default function TireHistory() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <div className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-muted/40 p-1">
+        <div className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-muted p-1">
           {TYPE_OPTIONS.map((opt) => (
             <button
               key={opt.value}
@@ -302,9 +302,9 @@ export default function TireHistory() {
                     <span
                       className={cn(
                         "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
-                        b.type === "inward" && "bg-info/10 text-info",
+                        b.type === "inward" && "bg-info-soft text-info",
                         b.type === "picking" && "bg-warning-soft text-warning",
-                        b.type === "outward" && "bg-danger/10 text-danger",
+                        b.type === "outward" && "bg-danger-soft text-danger",
                         b.type === "deleted" && "bg-muted text-muted-foreground",
                       )}
                     >

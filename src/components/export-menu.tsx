@@ -24,7 +24,7 @@ export default function ExportMenu({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(0,0,0,0.4)] p-4" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"

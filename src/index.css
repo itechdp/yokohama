@@ -15,17 +15,24 @@
 
   --primary: 24 95% 53%;
   --primary-foreground: 0 0% 100%;
+  --primary-soft: 24 95% 95%;
+  --primary-hover: 24 95% 58%;
   --accent: 24 95% 53%;
   --accent-foreground: 0 0% 100%;
 
   --success: 142 71% 35%;
   --success-soft: 142 71% 95%;
+  --success-border: 142 71% 80%;
+  --success-hover: 142 71% 40%;
   --warning: 38 92% 45%;
   --warning-soft: 38 92% 95%;
+  --warning-border: 38 92% 80%;
   --info: 217 91% 50%;
   --info-soft: 217 91% 95%;
   --danger: 0 72% 51%;
   --danger-soft: 0 72% 95%;
+  --danger-border: 0 72% 82%;
+  --danger-hover: 0 72% 56%;
 }
 
 @theme inline {
@@ -43,16 +50,23 @@
   --color-ring: hsl(var(--ring));
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-soft: hsl(var(--primary-soft));
+  --color-primary-hover: hsl(var(--primary-hover));
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-success: hsl(var(--success));
   --color-success-soft: hsl(var(--success-soft));
+  --color-success-border: hsl(var(--success-border));
+  --color-success-hover: hsl(var(--success-hover));
   --color-warning: hsl(var(--warning));
   --color-warning-soft: hsl(var(--warning-soft));
+  --color-warning-border: hsl(var(--warning-border));
   --color-info: hsl(var(--info));
   --color-info-soft: hsl(var(--info-soft));
   --color-danger: hsl(var(--danger));
   --color-danger-soft: hsl(var(--danger-soft));
+  --color-danger-border: hsl(var(--danger-border));
+  --color-danger-hover: hsl(var(--danger-hover));
 
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
 }

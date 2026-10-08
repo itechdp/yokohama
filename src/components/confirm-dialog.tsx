@@ -29,7 +29,7 @@ export default function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(0,0,0,0.4)] p-4" onClick={onCancel}>
       <div
         role="alertdialog"
         aria-modal="true"
@@ -39,7 +39,7 @@ export default function ConfirmDialog({
       >
         <div className="flex items-start gap-3">
           {destructive && (
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-danger/10 text-danger">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">
               <AlertTriangle className="size-5" />
             </span>
           )}
@@ -62,7 +62,7 @@ export default function ConfirmDialog({
             onClick={onConfirm}
             className={cn(
               "rounded-xl px-4 py-2 text-sm font-semibold text-white transition-colors",
-              destructive ? "bg-danger hover:bg-danger/90" : "bg-primary hover:bg-primary/90",
+              destructive ? "bg-danger hover:bg-danger-hover" : "bg-primary hover:bg-primary-hover",
             )}
           >
             {confirmLabel}

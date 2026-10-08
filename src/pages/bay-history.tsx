@@ -154,7 +154,7 @@ export default function BayHistory() {
         type="button"
         onClick={handleDownload}
         disabled={sessions.length === 0}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-40"
       >
         <Download className="size-4" />
         Download Report
@@ -200,7 +200,7 @@ export default function BayHistory() {
             </thead>
             <tbody>
               {sessions.map((s) => (
-                <tr key={s.id} className="bg-card even:bg-muted/30 hover:bg-muted/50 transition-colors">
+                <tr key={s.id} className="bg-card even:bg-muted hover:bg-muted transition-colors">
                   <td className="border border-border px-2 py-1.5 text-center font-semibold text-foreground">
                     {s.bay}
                   </td>

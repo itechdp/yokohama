@@ -135,7 +135,7 @@ export default function SelectMenu({
                   }}
                   className={cn(
                     "w-full px-3 py-2 text-left text-sm transition-colors",
-                    o.value === value ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-muted",
+                    o.value === value ? "bg-primary-soft text-primary font-medium" : "text-foreground hover:bg-muted",
                   )}
                 >
                   {o.label}

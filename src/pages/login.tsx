@@ -32,13 +32,13 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-primary/5 px-6">
+    <div className="flex min-h-full items-center justify-center bg-primary-soft px-6">
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-sm space-y-5 rounded-2xl border border-border bg-card p-6 shadow-sm"
       >
         <div className="flex flex-col items-center gap-2 pb-2 text-center">
-          <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <span className="flex size-12 items-center justify-center rounded-full bg-primary-soft text-primary">
             <Lock className="size-6" />
           </span>
           <h1 className="text-lg font-semibold text-foreground">Crown Pvt. Ltd.</h1>
@@ -83,13 +83,13 @@ export default function Login() {
         </label>
 
         {error && (
-          <p className="rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>
+          <p className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>
         )}
 
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+          className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-40"
         >
           {submitting ? "Signing in..." : "Sign in"}
         </button>

@@ -66,14 +66,14 @@ export default function AdminUsers() {
         <button
           type="button"
           onClick={() => setShowCreate(true)}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-hover transition-colors"
         >
           <UserPlus className="size-4" />
           Add user
         </button>
       </div>
 
-      {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>}
+      {error && <p className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
 
       <div className="space-y-2">
         {users === null ? (
@@ -120,7 +120,7 @@ export default function AdminUsers() {
                     title={deleteTitle}
                     onClick={() => setDeleteTarget(u)}
                     aria-label={`Delete ${u.username}`}
-                    className="inline-flex items-center justify-center rounded-xl border border-danger/30 bg-danger/5 p-2 text-danger hover:bg-danger/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex items-center justify-center rounded-xl border border-danger-border bg-danger-soft p-2 text-danger hover:bg-danger-soft disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <Trash2 className="size-3.5" />
                   </button>
@@ -205,7 +205,7 @@ function CreateUserModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(0,0,0,0.4)] p-4" onClick={onClose}>
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
@@ -267,7 +267,7 @@ function CreateUserModal({
           />
         </label>
 
-        {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>}
+        {error && <p className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
 
         <div className="flex items-center justify-end gap-2 pt-1">
           <button
@@ -280,7 +280,7 @@ function CreateUserModal({
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
+            className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40 transition-colors"
           >
             {submitting ? "Creating..." : "Create"}
           </button>

@@ -84,7 +84,7 @@ export default function PendingTyreDetail() {
         <button
           type="button"
           onClick={() => setShowForm((s) => !s)}
-          className="inline-flex shrink-0 items-center justify-center rounded-xl bg-primary p-2 text-white transition-colors hover:bg-primary/90"
+          className="inline-flex shrink-0 items-center justify-center rounded-xl bg-primary p-2 text-white transition-colors hover:bg-primary-hover"
           aria-label="Add pending tyre"
         >
           <Plus className="size-5" />
@@ -148,7 +148,7 @@ export default function PendingTyreDetail() {
                           type="button"
                           onClick={() => handleReceive(entry)}
                           disabled={!receiveQty || exceeds}
-                          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-success text-white hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-success text-white hover:bg-success-hover disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Confirm received"
                         >
                           <Check className="size-4" />
@@ -294,7 +294,7 @@ function AddPendingTireForm({
           type="button"
           onClick={handleSubmit}
           disabled={submitting}
-          className="flex-1 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting ? "Saving…" : "Save"}
         </button>

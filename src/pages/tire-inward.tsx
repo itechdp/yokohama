@@ -637,14 +637,14 @@ export default function TireInward() {
                     .map((code) => (
                       <div
                         key={code}
-                        className="relative flex items-center justify-center rounded-xl border border-success/30 bg-success/10 px-10 py-3"
+                        className="relative flex items-center justify-center rounded-xl border border-success-border bg-success-soft px-10 py-3"
                       >
                         <span className="text-lg font-semibold tracking-wide text-foreground">{code}</span>
                         <button
                           type="button"
                           onClick={() => toggleBin(code)}
                           aria-label={`Remove ${code}`}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger"
                         >
                           <X className="size-4" />
                         </button>
@@ -661,7 +661,7 @@ export default function TireInward() {
         type="button"
         onClick={handleAddEntry}
         disabled={selectedTires.length === 0 || !selectedWarehouse || !allPalletNosFilled || selectedBins.size === 0}
-        className="w-full rounded-xl border border-primary px-4 py-3.5 text-base font-semibold text-primary hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="w-full rounded-xl border border-primary px-4 py-3.5 text-base font-semibold text-primary hover:bg-primary-soft disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         OK - Confirm entry
       </button>
@@ -706,7 +706,7 @@ export default function TireInward() {
       <button
         onClick={handleInward}
         disabled={entries.length === 0 || !planNo.trim() || !shift || submitting}
-        className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="w-full rounded-xl bg-primary px-4 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         {submitting ? "Inwarding…" : `Inward${entries.length > 0 ? ` (${entries.length} entr${entries.length === 1 ? "y" : "ies"})` : ""}`}
       </button>

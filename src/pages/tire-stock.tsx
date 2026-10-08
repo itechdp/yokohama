@@ -512,7 +512,7 @@ export default function TireStock() {
             }}
             aria-label="Delete all stock"
             title="Delete all stock"
-            className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-danger/10 hover:text-danger transition-colors shrink-0"
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-danger-soft hover:text-danger transition-colors shrink-0"
           >
             <Trash2 className="size-4" />
           </button>
@@ -610,7 +610,7 @@ export default function TireStock() {
                 type="button"
                 onClick={handleSearch}
                 disabled={searching || loadingTires}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 whitespace-nowrap sm:w-auto"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 whitespace-nowrap sm:w-auto"
               >
                 {searching ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
                 {searching ? "Searching…" : "Search"}
@@ -654,7 +654,7 @@ export default function TireStock() {
               type="button"
               onClick={() => setAddOpen(true)}
               disabled={addOpen || busySerial !== null || isAllPositions}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Plus className="size-4" />
               Add tire
@@ -677,7 +677,7 @@ export default function TireStock() {
               type="button"
               onClick={() => setRowDeleteOpen(true)}
               disabled={busySerial !== null || rowDeleteBusy}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-danger/40 px-4 py-3 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-40 transition-colors"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-danger-border px-4 py-3 text-sm font-medium text-danger hover:bg-danger-soft disabled:opacity-40 transition-colors"
             >
               {rowDeleteBusy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
               Delete all tyres in Row {searchedLocation.col} (all positions)
@@ -727,7 +727,7 @@ export default function TireStock() {
                       type="button"
                       onClick={handleAdd}
                       disabled={busySerial !== null}
-                      className="ml-auto inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className="ml-auto inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
                       {busySerial === addDraft.material ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
                       Add {addQty}
@@ -795,7 +795,7 @@ export default function TireStock() {
                             type="button"
                             onClick={() => applyQty(g, draft)}
                             disabled={busySerial !== null}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                           >
                             {busy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                             Save
@@ -817,7 +817,7 @@ export default function TireStock() {
                         type="button"
                         onClick={() => setRemoveTarget(g)}
                         disabled={busySerial !== null}
-                        className="ml-auto rounded-lg p-2 text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                        className="ml-auto rounded-lg p-2 text-muted-foreground hover:bg-danger-soft hover:text-danger disabled:opacity-40"
                         aria-label={`Remove ${g.model} from this location`}
                         title="Remove from this location"
                       >

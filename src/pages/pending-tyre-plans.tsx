@@ -45,7 +45,7 @@ export default function PendingTyrePlans() {
               <Link
                 key={planNo}
                 to={`/bays/pending/${encodeURIComponent(planNo)}`}
-                className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3 hover:bg-muted/50 transition-colors"
+                className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3 hover:bg-muted transition-colors"
               >
                 <div>
                   <p className="text-sm font-semibold text-foreground">Plan {planNo}</p>

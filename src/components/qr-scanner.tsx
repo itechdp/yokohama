@@ -168,7 +168,7 @@ export default function QrScanner({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.8)] p-4">
       <div className="w-full max-w-sm rounded-2xl bg-card p-4 shadow-xl space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-medium text-foreground">{title}</h2>
@@ -182,7 +182,7 @@ export default function QrScanner({
         ) : (
           <div className="relative overflow-hidden rounded-xl bg-black aspect-square">
             <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
-            <div className="pointer-events-none absolute inset-8 rounded-xl border-2 border-white/70" />
+            <div className="pointer-events-none absolute inset-8 rounded-xl border-2 border-[rgba(255,255,255,0.7)]" />
           </div>
         )}
 

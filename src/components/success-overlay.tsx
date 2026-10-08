@@ -55,7 +55,7 @@ export default function SuccessOverlay({ message, onDone, durationMs = 1800 }: S
       onClick={onDone}
       role="status"
     >
-      <div className="success-overlay-badge flex size-24 items-center justify-center rounded-full bg-white/15">
+      <div className="success-overlay-badge flex size-24 items-center justify-center rounded-full bg-[rgba(255,255,255,0.15)]">
         <svg viewBox="0 0 52 52" className="size-14" fill="none">
           <circle
             cx="26"

@@ -147,7 +147,7 @@ export default function Warehouses() {
           <button
             type="button"
             onClick={startAdd}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-hover transition-colors"
           >
             <Plus className="size-4" />
             Add warehouse
@@ -193,7 +193,7 @@ export default function Warehouses() {
               <button
                 type="button"
                 onClick={addColumn}
-                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80"
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary"
               >
                 <Plus className="size-3.5" />
                 Add column
@@ -240,7 +240,7 @@ export default function Warehouses() {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-50 transition-colors"
             >
               <Check className="size-4" />
               {saving ? "Saving…" : "Save warehouse"}
@@ -268,7 +268,7 @@ export default function Warehouses() {
               <div key={w.key} className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
                 <p className="flex-1 min-w-[6rem] font-medium text-foreground">{w.label}</p>
                 <div className="ml-auto flex items-center gap-2">
-                  <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                  <span className="shrink-0 rounded-full bg-primary-soft px-2 py-0.5 text-xs font-medium text-primary">
                     {totalBins} bins
                   </span>
                   <button

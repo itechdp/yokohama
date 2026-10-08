@@ -45,7 +45,7 @@ export default function TireSkuCatalog() {
         </div>
         <Link
           to="/tires/new"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-hover transition-colors shrink-0"
         >
           <Plus className="size-4" />
           Add tire
@@ -70,7 +70,7 @@ export default function TireSkuCatalog() {
             <div className="flex items-start justify-between gap-2">
               <span className="font-semibold text-foreground">{row.material}</span>
               {row.brand && (
-                <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                <span className="shrink-0 rounded-full bg-primary-soft px-2 py-0.5 text-xs font-medium text-primary">
                   {row.brand}
                 </span>
               )}
@@ -101,7 +101,7 @@ export default function TireSkuCatalog() {
           </thead>
           <tbody className="divide-y divide-border">
             {rows.map((row) => (
-              <tr key={row.id} className="hover:bg-muted/50 transition-colors">
+              <tr key={row.id} className="hover:bg-muted transition-colors">
                 <td className="px-4 py-3 font-medium text-foreground">{row.material}</td>
                 <td className="px-4 py-3 text-foreground">{row.description}</td>
                 <td className="px-4 py-3 text-muted-foreground">{row.ply_rating_bottom || "—"}</td>

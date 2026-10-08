@@ -126,7 +126,7 @@ export default function ExchangeLocationModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.4)] p-4">
       <div className="w-full max-w-2xl rounded-2xl bg-card p-4 sm:p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
@@ -166,7 +166,7 @@ export default function ExchangeLocationModal({
             type="button"
             onClick={handleConfirm}
             disabled={!fromLocation || !toLocation || submitting}
-            className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {submitting ? "Exchanging…" : "Done - Exchange location"}
           </button>
@@ -251,7 +251,7 @@ function LocationFormCard({
   };
 
   return (
-    <div className="rounded-xl border border-border bg-muted/40 p-3 space-y-2.5">
+    <div className="rounded-xl border border-border bg-muted p-3 space-y-2.5">
       <p className="text-sm font-semibold text-foreground">{title}</p>
 
       <div className="space-y-1.5">
@@ -307,7 +307,7 @@ function LocationFormCard({
         disabled={!form.col || !form.row}
         className={cn(
           "w-full rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed",
-          form.bin ? "border-success/30 bg-success/10 text-success" : "border-border bg-card text-foreground hover:bg-muted",
+          form.bin ? "border-success-border bg-success-soft text-success" : "border-border bg-card text-foreground hover:bg-muted",
         )}
       >
         {form.bin ? `Location: ${form.bin}` : "Add Location"}

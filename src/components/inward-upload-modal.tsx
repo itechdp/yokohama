@@ -159,7 +159,7 @@ export default function InwardUploadModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={close}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(0,0,0,0.4)] p-4" onClick={close}>
       <div
         role="dialog"
         aria-modal="true"
@@ -227,7 +227,7 @@ export default function InwardUploadModal({
             preview.map((loc, locIdx) => (
               <div
                 key={`${loc.location}-${locIdx}`}
-                className={cn("rounded-xl border", loc.warehouse ? "border-border" : "border-danger/40")}
+                className={cn("rounded-xl border", loc.warehouse ? "border-border" : "border-danger-border")}
               >
                 <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
                   <p className="font-semibold text-foreground">{loc.location}</p>
@@ -260,7 +260,7 @@ export default function InwardUploadModal({
                             placeholder="Pallet no"
                             className={cn(
                               "w-28 shrink-0 rounded-lg border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring",
-                              pallet.trim() ? "border-border" : "border-danger/50",
+                              pallet.trim() ? "border-border" : "border-danger-border",
                             )}
                           />
                         )}
@@ -284,7 +284,7 @@ export default function InwardUploadModal({
             type="button"
             onClick={handleImport}
             disabled={importableLocations.length === 0 || reading}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {importableLocations.length > 0
               ? `Inward ${importableLocations.length} entr${importableLocations.length === 1 ? "y" : "ies"} (${totalTires} tires)`
