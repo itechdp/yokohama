@@ -102,7 +102,7 @@ export default function SelectMenu({
           setOpen(!open);
         }}
         disabled={disabled}
-        className="w-full flex items-center justify-between gap-1 rounded-lg border border-border bg-card px-2 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-40 disabled:cursor-not-allowed"
+        className="w-full flex items-center justify-between gap-1 rounded-xl border border-border bg-card px-3 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-40 disabled:cursor-not-allowed"
       >
         <span className={cn("truncate text-left", !selected && "text-muted-foreground")}>{selected ? selected.label : placeholder}</span>
         <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />

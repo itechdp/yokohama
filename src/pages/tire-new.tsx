@@ -100,7 +100,7 @@ export default function TireNew() {
   };
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-6">
       <button
         onClick={() => navigate(-1)}
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -108,7 +108,7 @@ export default function TireNew() {
         <ArrowLeft className="size-4" /> Back
       </button>
 
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Add new tire</h1>
           <p className="text-muted-foreground">Record a tire as it enters production.</p>
@@ -122,7 +122,7 @@ export default function TireNew() {
         </Link>
       </div>
 
-      <form onSubmit={handleSubmit} className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4">
+      <form onSubmit={handleSubmit} className="rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-sm space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="relative space-y-1">
             <label className="text-sm font-medium text-foreground">Material<RequiredMark /></label>

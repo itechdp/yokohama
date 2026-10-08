@@ -52,9 +52,9 @@ export default function Home() {
       </div>
 
       <div className="px-6 pb-10 pt-8">
-        <div className="flex flex-wrap items-start gap-x-4 gap-y-6">
+        <div className="grid grid-cols-4 items-start gap-x-2 gap-y-6">
           {items.map(({ to, label, icon: Icon }) => (
-            <Link key={to} to={to} className="flex w-16 flex-col items-center gap-2 text-center">
+            <Link key={to} to={to} className="flex min-w-0 flex-col items-center gap-2 text-center">
               <span className="flex size-16 items-center justify-center rounded-full bg-card shadow-sm ring-1 ring-border transition-transform active:scale-95">
                 <Icon className="size-6 text-primary" />
               </span>
@@ -64,7 +64,7 @@ export default function Home() {
 
           <Link
             to="/tires/inward"
-            className="flex min-w-[200px] flex-1 items-center justify-between gap-3 rounded-full bg-card px-5 py-3 shadow-sm"
+            className="col-span-4 flex items-center justify-between gap-3 rounded-full bg-card px-5 py-3 shadow-sm"
           >
             <div>
               <p className="text-sm font-semibold text-foreground">One tap away</p>

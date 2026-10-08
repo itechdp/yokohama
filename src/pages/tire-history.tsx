@@ -176,7 +176,7 @@ export default function TireHistory() {
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
             <HistoryIcon className="size-6 text-primary" />
@@ -192,14 +192,14 @@ export default function TireHistory() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <div className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-muted p-1">
+        <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-muted p-1">
           {TYPE_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type="button"
               onClick={() => setTypeFilter(opt.value)}
               className={cn(
-                "shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                "flex-auto whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
                 typeFilter === opt.value ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground",
               )}
             >

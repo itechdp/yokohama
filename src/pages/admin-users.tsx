@@ -1,58 +1,46 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Eye, EyeOff, ShieldCheck, Trash2, UserPlus, RotateCcw } from "lucide-react";
+import { Eye, EyeOff, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import * as authClient from "@/lib/auth-client";
-import { ApiError, type AdminUserRow } from "@/lib/auth-client";
+import type { UserRow } from "@/lib/auth-client";
 import SelectMenu from "@/components/select-menu";
 import ConfirmDialog from "@/components/confirm-dialog";
 import RequiredMark from "@/components/required-mark";
 
-function roleLabel(role: AdminUserRow["role"]): string {
+function roleLabel(role: UserRow["role"]): string {
   return role === "admin" ? "Admin" : "Operator";
 }
 
 export default function AdminUsers() {
-  const { token, user: currentUser } = useAuth();
-  const [users, setUsers] = useState<AdminUserRow[] | null>(null);
+  const { user: currentUser } = useAuth();
+  const adminId = currentUser?.id ?? null;
+  const [users, setUsers] = useState<UserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [resetTarget, setResetTarget] = useState<AdminUserRow | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AdminUserRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
 
   async function refresh() {
-    if (!token) return;
+    if (!adminId) return;
     try {
-      const { users } = await authClient.listUsers(token);
-      setUsers(users);
+      setUsers(await authClient.listUsers(adminId));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load users");
+      setError(err instanceof Error ? err.message : "Failed to load users");
     }
   }
 
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
-  async function handleResetDevice() {
-    if (!token || !resetTarget) return;
-    try {
-      await authClient.resetDevice(token, resetTarget.id);
-      setResetTarget(null);
-      await refresh();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to reset device");
-    }
-  }
+  }, [adminId]);
 
   async function handleDeleteUser() {
-    if (!token || !deleteTarget) return;
+    if (!adminId || !deleteTarget) return;
     try {
-      await authClient.deleteUser(token, deleteTarget.id);
+      await authClient.deleteUser(adminId, deleteTarget.id);
       setDeleteTarget(null);
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to delete user");
+      setError(err instanceof Error ? err.message : "Failed to delete user");
     }
   }
 
@@ -83,37 +71,17 @@ export default function AdminUsers() {
         ) : (
           users.map((u) => {
             const isSelf = u.id === currentUser?.id;
-            // Mirrors the server's own check (api/admin/users/[id]/reset-device.ts) -
-            // no self-reset for anyone - shown here so the button's disabled
-            // state and tooltip explain why, rather than just failing after a click.
-            const resetDisabled = !u.device_registered || isSelf;
-            const resetTitle = isSelf ? "You cannot reset your own device - ask another admin" : undefined;
             const deleteTitle = isSelf ? "You cannot delete your own account - ask another admin" : undefined;
             return (
               <div
                 key={u.id}
                 className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm"
               >
-                <div>
-                  <p className="text-sm font-medium text-foreground">{u.username}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {roleLabel(u.role)}
-                    {" · "}
-                    {u.device_registered ? "Device registered" : "No device registered"}
-                    {!u.is_active && " · Inactive"}
-                  </p>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{u.username}</p>
+                  <p className="text-xs text-muted-foreground">{roleLabel(u.role)}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    disabled={resetDisabled}
-                    title={resetTitle}
-                    onClick={() => setResetTarget(u)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <RotateCcw className="size-3.5" />
-                    Reset device
-                  </button>
                   <button
                     type="button"
                     disabled={isSelf}
@@ -133,7 +101,7 @@ export default function AdminUsers() {
 
       {showCreate && (
         <CreateUserModal
-          token={token}
+          adminId={adminId}
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false);
@@ -141,20 +109,6 @@ export default function AdminUsers() {
           }}
         />
       )}
-
-      <ConfirmDialog
-        open={Boolean(resetTarget)}
-        title="Reset device?"
-        message={
-          resetTarget
-            ? `${resetTarget.username} will be able to log in from a new phone. Their current device will no longer work until they log in again.`
-            : ""
-        }
-        confirmLabel="Reset device"
-        destructive
-        onConfirm={handleResetDevice}
-        onCancel={() => setResetTarget(null)}
-      />
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}
@@ -174,11 +128,11 @@ export default function AdminUsers() {
 }
 
 function CreateUserModal({
-  token,
+  adminId,
   onClose,
   onCreated,
 }: {
-  token: string | null;
+  adminId: string | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -191,14 +145,14 @@ function CreateUserModal({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!token) return;
+    if (!adminId) return;
     setError(null);
     setSubmitting(true);
     try {
-      await authClient.createUser(token, { username: username.trim(), password, role });
+      await authClient.createUser(adminId, { username: username.trim(), password, role });
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create user");
+      setError(err instanceof Error ? err.message : "Failed to create user");
     } finally {
       setSubmitting(false);
     }

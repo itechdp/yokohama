@@ -1,39 +1,7 @@
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    public status: number
-  ) {
-    super(message);
-  }
-}
+import { supabase } from "@/lib/supabase";
 
-async function postJson<T>(path: string, body: unknown, token?: string): Promise<T> {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new ApiError(data?.error ?? "Request failed", res.status);
-  }
-  return data as T;
-}
-
-async function getJson<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(path, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new ApiError(data?.error ?? "Request failed", res.status);
-  }
-  return data as T;
-}
+// Login and user management go through the database functions in
+// supabase/migrations/users.sql - no Supabase Auth, no API server, no tokens.
 
 export type UserRole = "admin" | "operator";
 
@@ -43,50 +11,47 @@ export interface SessionUser {
   role: UserRole;
 }
 
-export function requestChallenge(username: string) {
-  return postJson<{ challenge_token: string }>("/api/auth/challenge", { username });
-}
-
-export function login(params: {
-  username: string;
-  password: string;
-  challenge_token: string;
-  signature_b64: string;
-  device_public_key_b64: string;
-}) {
-  return postJson<{ session_jwt: string; user: SessionUser }>("/api/auth/login", params);
-}
-
-export interface AdminUserRow {
+export interface UserRow {
   id: string;
   username: string;
   role: UserRole;
-  is_active: boolean;
-  device_registered: boolean;
-  device_registered_at: string | null;
   created_at: string;
 }
 
-export function listUsers(token: string) {
-  return getJson<{ users: AdminUserRow[] }>("/api/admin/users", token);
-}
-
-export function createUser(token: string, params: { username: string; password: string; role: UserRole }) {
-  return postJson<{ user: AdminUserRow }>("/api/admin/users", params, token);
-}
-
-export function resetDevice(token: string, userId: string) {
-  return postJson<{ ok: true }>(`/api/admin/users/${userId}/reset-device`, {}, token);
-}
-
-export async function deleteUser(token: string, userId: string): Promise<{ ok: true }> {
-  const res = await fetch(`/api/admin/users/${userId}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
+export async function login(username: string, password: string): Promise<SessionUser> {
+  const { data, error } = await supabase.rpc("app_login", {
+    p_username: username,
+    p_password: password,
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new ApiError(data?.error ?? "Request failed", res.status);
-  }
-  return data as { ok: true };
+  if (error) throw new Error(error.message);
+  const user = (data as SessionUser[] | null)?.[0];
+  if (!user) throw new Error("Invalid username or password");
+  return user;
+}
+
+export async function listUsers(adminId: string): Promise<UserRow[]> {
+  const { data, error } = await supabase.rpc("app_list_users", { p_admin_id: adminId });
+  if (error) throw new Error(error.message);
+  return (data as UserRow[] | null) ?? [];
+}
+
+export async function createUser(
+  adminId: string,
+  params: { username: string; password: string; role: UserRole }
+): Promise<void> {
+  const { error } = await supabase.rpc("app_create_user", {
+    p_admin_id: adminId,
+    p_username: params.username,
+    p_password: params.password,
+    p_role: params.role,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteUser(adminId: string, userId: string): Promise<void> {
+  const { error } = await supabase.rpc("app_delete_user", {
+    p_admin_id: adminId,
+    p_user_id: userId,
+  });
+  if (error) throw new Error(error.message);
 }

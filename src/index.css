@@ -96,6 +96,16 @@ body {
   overflow-x: hidden;
 }
 
+/* iOS Safari zooms the whole page when focusing a field whose font-size is
+   below 16px (the inputs here use text-sm). Bump fields to 16px on iOS only. */
+@supports (-webkit-touch-callout: none) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 @keyframes success-overlay-fade-in {
   from {
     opacity: 0;

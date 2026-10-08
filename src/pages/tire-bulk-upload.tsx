@@ -126,8 +126,8 @@ export default function TireBulkUpload() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-4">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
             <UploadCloud className="size-6 text-primary" />
@@ -142,7 +142,7 @@ export default function TireBulkUpload() {
         </Link>
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-4">
+      <div className="rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-sm space-y-4">
         <input
           ref={fileInputRef}
           type="file"

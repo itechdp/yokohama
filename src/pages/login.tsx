@@ -2,7 +2,6 @@ import { useState, type FormEvent } from "react";
 import { Navigate, useLocation } from "react-router";
 import { Eye, EyeOff, Lock } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { ApiError } from "@/lib/auth-client";
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -25,7 +24,7 @@ export default function Login() {
     try {
       await login(username.trim(), password);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Login failed. Please try again.");
+      setError(err instanceof Error ? err.message : "Login failed. Please try again.");
     } finally {
       setSubmitting(false);
     }
