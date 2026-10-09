@@ -45,10 +45,16 @@ public final class KioskHelper {
     // Call from Activity#onWindowFocusChanged while kiosk mode is the
     // desired state. Immersive flags get silently cleared by the OS
     // whenever focus is regained (e.g. after a system dialog or the
-    // keyboard) - this reapplies them.
+    // keyboard) - this reapplies them. Also re-attempts screen pinning:
+    // the manual "hold Back + Recents" unpin gesture (the one escape hatch
+    // self-pinning can't block - see KioskHelper's class doc) typically
+    // triggers a focus blip of its own, and the operator coming back to
+    // this app after actually leaving always does - either way, this is
+    // the single place kiosk mode gets re-asserted after an escape.
     public static void onWindowFocusChanged(Activity activity, boolean hasFocus) {
         if (activity == null || !hasFocus) return;
         applyFullscreen(activity);
+        tryStartLockTask(activity);
     }
 
     // ---- fullscreen / immersive --------------------------------------
