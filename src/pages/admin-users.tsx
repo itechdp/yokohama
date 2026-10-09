@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Eye, EyeOff, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { Eye, EyeOff, KeyRound, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import * as authClient from "@/lib/auth-client";
 import type { UserRow } from "@/lib/auth-client";
+import { getExitPin, setExitPin } from "@/lib/exit-pin";
 import SelectMenu from "@/components/select-menu";
 import ConfirmDialog from "@/components/confirm-dialog";
 import RequiredMark from "@/components/required-mark";
@@ -62,6 +63,8 @@ export default function AdminUsers() {
       </div>
 
       {error && <p className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+
+      <ExitPinSettings adminId={adminId} />
 
       <div className="space-y-2">
         {users === null ? (
@@ -240,6 +243,102 @@ function CreateUserModal({
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+// The shared PIN operators enter to use the Exit button and leave the
+// kiosk-locked app (see supabase/migrations/exit_pin_setting.sql). Viewable
+// and changeable here only - admins never see it hashed, since it's a
+// light "ask a supervisor" gate, not an account credential.
+function ExitPinSettings({ adminId }: { adminId: string | null }) {
+  const [pin, setPin] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!adminId) return;
+    getExitPin(adminId)
+      .then(setPin)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load Exit PIN"));
+  }, [adminId]);
+
+  async function handleSave() {
+    if (!adminId) return;
+    setError(null);
+    setSaving(true);
+    try {
+      await setExitPin(adminId, draft.trim());
+      setPin(draft.trim());
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save Exit PIN");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <KeyRound className="size-4 text-primary" />
+        Exit PIN
+      </h2>
+      <p className="text-xs text-muted-foreground">
+        Operators enter this PIN to use the Exit button and leave the locked app.
+      </p>
+
+      {editing ? (
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            autoFocus
+            className="w-32 rounded-xl border border-border bg-card px-3 py-2 text-center text-sm tracking-widest text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !draft.trim()}
+            className="rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-40 transition-colors"
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEditing(false);
+              setError(null);
+            }}
+            className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="rounded-xl border border-border bg-muted px-3 py-2 text-sm tracking-widest text-foreground">
+            {pin ?? "..."}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(pin ?? "");
+              setEditing(true);
+            }}
+            disabled={pin === null}
+            className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+          >
+            Change
+          </button>
+        </div>
+      )}
+
+      {error && <p className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { ArrowUpRight, LogOut, Moon, Sun } from "lucide-react";
 import { FEATURE_ITEMS } from "@/lib/nav-items";
 import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/contexts/auth-context";
+import ExitKioskButton from "@/components/exit-kiosk-button";
 
 // "Pile of used tires" by Robert Laursoo (@robineero) on Unsplash — free Unsplash License.
 const HERO_IMAGE_URL = "https://images.unsplash.com/photo-1578844251758-2f71da64c96f?auto=format&fit=crop&w=1200&q=60";
@@ -33,14 +34,18 @@ export default function Home() {
             >
               {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
             </button>
-            <button
-              type="button"
-              onClick={logout}
-              aria-label="Log out"
-              className="flex size-10 items-center justify-center rounded-full bg-[rgba(0,0,0,0.3)] text-white backdrop-blur-sm transition-transform active:scale-95"
-            >
-              <LogOut className="size-5" />
-            </button>
+            {user?.role === "operator" ? (
+              <ExitKioskButton />
+            ) : (
+              <button
+                type="button"
+                onClick={logout}
+                aria-label="Log out"
+                className="flex size-10 items-center justify-center rounded-full bg-[rgba(0,0,0,0.3)] text-white backdrop-blur-sm transition-transform active:scale-95"
+              >
+                <LogOut className="size-5" />
+              </button>
+            )}
           </div>
         </header>
 
