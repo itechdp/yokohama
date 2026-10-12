@@ -423,25 +423,28 @@ export default function TireInward() {
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">1. Plan details</h2>
-        <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Driver Name</span>
-          <input
-            type="text"
-            value={pickerName}
-            onChange={(e) => setPickerName(e.target.value)}
-            placeholder="Enter driver name"
-            autoComplete="off"
-            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Sheet No<RequiredMark /></span>
-          <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="inward" />
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Shift<RequiredMark /></span>
-          <SelectMenu value={shift} placeholder="Select shift" options={SHIFT_OPTIONS} onChange={setShift} />
-        </label>
+        {/* Always one row: Driver Name, Sheet No, Shift. */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <label className="block min-w-0 space-y-1.5">
+            <span className="text-sm font-medium text-foreground">Driver Name</span>
+            <input
+              type="text"
+              value={pickerName}
+              onChange={(e) => setPickerName(e.target.value)}
+              placeholder="Enter driver name"
+              autoComplete="off"
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </label>
+          <label className="block min-w-0 space-y-1.5">
+            <span className="text-sm font-medium text-foreground">Sheet No<RequiredMark /></span>
+            <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="inward" />
+          </label>
+          <label className="block min-w-0 space-y-1.5">
+            <span className="text-sm font-medium text-foreground">Shift<RequiredMark /></span>
+            <SelectMenu value={shift} placeholder="Select shift" options={SHIFT_OPTIONS} onChange={setShift} />
+          </label>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
