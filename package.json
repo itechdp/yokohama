@@ -11,7 +11,8 @@
     "build": "vite build",
     "preview": "vite preview --port 3000",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:delete-safety": "esbuild tests/delete-safety/delete-safety.test.ts --bundle --platform=node --outfile=node_modules/.cache/delete-safety.cjs --alias:@/lib/supabase=./tests/delete-safety/fake-supabase.ts --alias:@=./src --log-level=error && node node_modules/.cache/delete-safety.cjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",

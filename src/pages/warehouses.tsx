@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { Check, Grid3x3, Pencil, Plus, Trash2, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { Check, Grid3x3, Loader2, PackageX, Pencil, Plus, Trash2, Warehouse as WarehouseIcon, X } from "lucide-react";
 import ConfirmDialog from "@/components/confirm-dialog";
 import RequiredMark from "@/components/required-mark";
+import { deleteTiresInWarehouse } from "@/lib/tires";
 import { deleteWarehouse, fetchWarehouses, upsertWarehouse } from "@/lib/warehouses";
 import type { WarehouseDef } from "@/data/warehouse-bins";
 
@@ -35,6 +36,11 @@ export default function Warehouses() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<WarehouseDef | null>(null);
+  // Separate from deleteTarget: this clears only the tyres stored in a
+  // warehouse; the warehouse itself and its bin layout are kept.
+  const [clearTarget, setClearTarget] = useState<WarehouseDef | null>(null);
+  const [clearBusyKey, setClearBusyKey] = useState<string | null>(null);
+  const [clearMessage, setClearMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const columnsContainerRef = useRef<HTMLDivElement>(null);
 
   const load = () => {
@@ -71,6 +77,21 @@ export default function Warehouses() {
     setDeleteTarget(null);
     setWarehouses((prev) => prev.filter((w) => w.key !== key));
     await deleteWarehouse(key);
+  };
+
+  const confirmClearTires = async () => {
+    const target = clearTarget;
+    if (!target || clearBusyKey) return;
+    setClearTarget(null);
+    setClearBusyKey(target.key);
+    setClearMessage(null);
+    const { deletedCount, error: clearError } = await deleteTiresInWarehouse(target);
+    setClearBusyKey(null);
+    setClearMessage(
+      clearError
+        ? { ok: false, text: `Could not delete tyres from ${target.label}: ${clearError}` }
+        : { ok: true, text: `${deletedCount} tyre${deletedCount === 1 ? "" : "s"} deleted from ${target.label}.` },
+    );
   };
 
   const updateColumn = (index: number, value: number) => {
@@ -256,6 +277,14 @@ export default function Warehouses() {
         </div>
       )}
 
+      {clearMessage && (
+        <div
+          className={`rounded-xl px-3 py-2 text-sm ${clearMessage.ok ? "bg-primary-soft text-primary" : "bg-danger-soft text-danger"}`}
+        >
+          {clearMessage.text}
+        </div>
+      )}
+
       {warehouses.length === 0 && !form ? (
         <div className="rounded-2xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
           No warehouses yet — add one to start building its bin layout.
@@ -281,6 +310,16 @@ export default function Warehouses() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => setClearTarget(w)}
+                    disabled={clearBusyKey !== null}
+                    className="shrink-0 inline-flex items-center justify-center rounded-lg border border-border p-2 text-muted-foreground hover:border-danger hover:text-danger transition-colors disabled:opacity-50"
+                    aria-label={`Delete tyres in ${w.label}`}
+                    title={`Delete tyres in ${w.label} (keeps the warehouse)`}
+                  >
+                    {clearBusyKey === w.key ? <Loader2 className="size-3.5 animate-spin" /> : <PackageX className="size-3.5" />}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setDeleteTarget(w)}
                     className="shrink-0 inline-flex items-center justify-center rounded-lg border border-border p-2 text-muted-foreground hover:border-danger hover:text-danger transition-colors"
                     aria-label={`Delete ${w.label}`}
@@ -297,6 +336,20 @@ export default function Warehouses() {
       <Link to="/" className="inline-block text-sm text-muted-foreground hover:text-foreground">
         Back to home
       </Link>
+
+      <ConfirmDialog
+        open={!!clearTarget}
+        title={clearTarget ? `Delete all tyres in ${clearTarget.label}?` : ""}
+        message={
+          clearTarget
+            ? `This permanently removes every tyre stored in ${clearTarget.label}. The warehouse, its name and its bin layout stay. Other warehouses are not affected.`
+            : ""
+        }
+        confirmLabel="Delete tyres"
+        destructive
+        onConfirm={confirmClearTires}
+        onCancel={() => setClearTarget(null)}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget}

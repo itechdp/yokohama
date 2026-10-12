@@ -1,4 +1,6 @@
 import { supabase } from "@/lib/supabase";
+import { binForLocation, type WarehouseDef } from "@/data/warehouse-bins";
+import { fetchWarehouses } from "@/lib/warehouses";
 import type { Tire } from "@/types/tire";
 
 interface TireRow {
@@ -181,21 +183,107 @@ export async function insertTires(tires: Tire[]): Promise<{ error: string | null
 // Insert-or-update by id — Inward/Picking/Outward each move a mix of
 // existing units (stage/location changes) and newly-synthesized ones in a
 // single action, so one upsert covers both.
-// Deletes every tire unit — production, warehouse (stock) and dispatch
-// stages alike — used by Stock's "Delete all stock" to reset Inward/Outward
-// counts back to 0. Does not touch tire_skus (the catalog) or any
-// inward_receipts/outwards/picks/tire_history rows, so past entries and the
-// list of tire models both stay intact.
-export async function deleteAllTires(): Promise<{ error: string | null }> {
-  const { error } = await supabase.from("tires").delete().not("id", "is", null);
-  if (error) {
-    console.warn("tires delete-all failed:", error.message);
-    return { error: error.message };
+// ---------------------------------------------------------------------------
+// Stock deletion. Deliberately conservative: nothing here uses a LIKE/pattern
+// filter and nothing deletes by "everything matching a condition". Every
+// delete is by explicit row id plus exact location text, always re-asserts
+// current_stage = 'warehouse' in the DELETE itself so production/dispatch
+// tires can never be hit, and double-checks the rows the database reports.
+// ---------------------------------------------------------------------------
+
+const LOCATION_SEPARATOR = " - Bin ";
+const DELETE_CHUNK = 100;
+
+// Which saved warehouse a tire location ("<label> - Bin <code>") belongs to.
+// Longest matching label wins, so a warehouse can never claim tires of
+// another warehouse whose label merely starts with its own.
+function warehouseOwningLocation(warehouses: WarehouseDef[], location: string): WarehouseDef | null {
+  let best: WarehouseDef | null = null;
+  for (const w of warehouses) {
+    if (binForLocation(w, location) === null) continue;
+    if (!best || w.label.length > best.label.length) best = w;
   }
-  return { error: null };
+  return best;
 }
 
-// Deletes every warehouse-stage tire unit at one exact Material+location —
+// Returns an error message if the saved warehouse list can't be trusted to
+// tell warehouses apart (so deleting by name could hit the wrong one).
+function warehouseListProblem(warehouses: WarehouseDef[]): string | null {
+  for (const w of warehouses) {
+    if (!w.label || w.label !== w.label.trim() || w.label.includes(LOCATION_SEPARATOR)) {
+      return `Warehouse name "${w.label}" is not safe to delete by. Fix it on the Warehouses page first.`;
+    }
+  }
+  const labels = new Set(warehouses.map((w) => w.label));
+  if (labels.size !== warehouses.length) {
+    return "Two warehouses share the same name. Fix it on the Warehouses page first.";
+  }
+  return null;
+}
+
+// Deletes every warehouse-stage tire stored in ONE warehouse (any bin) and
+// nothing else. The warehouse is re-checked against the saved list; the tires
+// to delete are picked by exact-prefix match in code (no database pattern
+// matching) and removed by id + exact location + stage in a single DELETE.
+export async function deleteTiresInWarehouse(
+  target: Pick<WarehouseDef, "key" | "label">,
+): Promise<{ deletedCount: number; error: string | null }> {
+  const saved = await fetchWarehouses();
+  const warehouse = saved.find((w) => w.key === target.key && w.label === target.label);
+  if (!warehouse) {
+    return { deletedCount: 0, error: "That warehouse no longer exists (or was renamed). Nothing was deleted." };
+  }
+  const problem = warehouseListProblem(saved);
+  if (problem) return { deletedCount: 0, error: `${problem} Nothing was deleted.` };
+
+  const { data, error: readError } = await supabase.from("tires").select("id, location").eq("current_stage", "warehouse");
+  if (readError) {
+    console.warn("tires read before warehouse delete failed:", readError.message);
+    return { deletedCount: 0, error: readError.message };
+  }
+  const candidates = ((data ?? []) as { id: string; location: string }[]).filter(
+    (t) => warehouseOwningLocation(saved, t.location)?.key === warehouse.key,
+  );
+
+  // The read above can go stale (another device may move or pick a tire a
+  // moment later). So the DELETE itself re-asserts, in its own WHERE clause,
+  // everything we verified: stage is 'warehouse' AND location is one of this
+  // warehouse's exact, verified location strings AND the id is one we chose.
+  // The database re-evaluates that clause against each row's latest committed
+  // state, so a tire that moved elsewhere or changed stage in the meantime
+  // simply doesn't match and is left alone.
+  let deletedCount = 0;
+  for (let i = 0; i < candidates.length; i += DELETE_CHUNK) {
+    const chunk = candidates.slice(i, i + DELETE_CHUNK);
+    const { data: removed, error } = await supabase
+      .from("tires")
+      .delete()
+      .in("id", chunk.map((t) => t.id))
+      .in("location", [...new Set(chunk.map((t) => t.location))])
+      .eq("current_stage", "warehouse")
+      .select("id, current_stage, location");
+    if (error) {
+      console.warn("tires delete-in-warehouse failed:", error.message);
+      return { deletedCount, error: error.message };
+    }
+    const rows = (removed ?? []) as { id: string; current_stage: string; location: string }[];
+    deletedCount += rows.length;
+    // Backstop only - the WHERE clause above is the real protection.
+    const stray = rows.find(
+      (r) => r.current_stage !== "warehouse" || warehouseOwningLocation(saved, r.location)?.key !== warehouse.key,
+    );
+    if (stray) {
+      console.error("tires delete-in-warehouse removed an unexpected row:", stray);
+      return {
+        deletedCount,
+        error: `Safety check failed: a tire outside ${warehouse.label} was removed (${stray.id}). Stopped; contact support.`,
+      };
+    }
+  }
+  return { deletedCount, error: null };
+}
+
+// Deletes every warehouse-stage tire unit of ONE Material at ONE exact bin —
 // used by Picking's per-card Delete button to permanently remove a tire
 // from a bin (unlike takeOutOfStock, which just moves stage/location).
 // Returns how many units were actually deleted so the caller can log that
@@ -204,18 +292,38 @@ export async function deleteTiresAtLocation(
   material: string,
   location: string,
 ): Promise<{ deletedCount: number; error: string | null }> {
+  if (!material.trim() || !location.trim()) {
+    return { deletedCount: 0, error: "Missing tire or location. Nothing was deleted." };
+  }
+  const saved = await fetchWarehouses();
+  const owner = warehouseOwningLocation(saved, location);
+  const bin = owner ? binForLocation(owner, location) : null;
+  if (!owner || !bin) {
+    return { deletedCount: 0, error: "That location is not in a saved warehouse. Nothing was deleted." };
+  }
+  const problem = warehouseListProblem(saved);
+  if (problem) return { deletedCount: 0, error: `${problem} Nothing was deleted.` };
+
   const { data, error } = await supabase
     .from("tires")
     .delete()
     .eq("serial_number", material)
     .eq("location", location)
     .eq("current_stage", "warehouse")
-    .select("id");
+    .select("id, serial_number, location, current_stage");
   if (error) {
     console.warn("tires delete-at-location failed:", error.message);
     return { deletedCount: 0, error: error.message };
   }
-  return { deletedCount: data?.length ?? 0, error: null };
+  const rows = (data ?? []) as { id: string; serial_number: string; location: string; current_stage: string }[];
+  const stray = rows.find(
+    (r) => r.serial_number !== material || r.location !== location || r.current_stage !== "warehouse",
+  );
+  if (stray) {
+    console.error("tires delete-at-location removed an unexpected row:", stray);
+    return { deletedCount: rows.length, error: `Safety check failed: unexpected tire removed (${stray.id}). Contact support.` };
+  }
+  return { deletedCount: rows.length, error: null };
 }
 
 export async function upsertTires(tires: Tire[]): Promise<{ error: string | null }> {

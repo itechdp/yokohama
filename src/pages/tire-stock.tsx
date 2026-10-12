@@ -19,7 +19,7 @@ import {
 } from "@/lib/stock-export";
 import { addToStock, removeFromStock } from "@/lib/stock-adjust";
 import type { TireSkuRow } from "@/lib/supabase";
-import { deleteAllTires, fetchTires } from "@/lib/tires";
+import { deleteTiresInWarehouse, fetchTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { Tire } from "@/types/tire";
 
@@ -413,21 +413,20 @@ export default function TireStock() {
   const [deleteAllBusy, setDeleteAllBusy] = useState(false);
   const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
 
-  // Wipes every tire in the system — resets Inward/Outward/Picking stock to
-  // 0. Leaves the tire catalog and all past Inward/Outward/Picking history
-  // untouched (see deleteAllTires).
+  // Wipes the stock of the SELECTED warehouse only; every other warehouse is
+  // left untouched. Leaves the tire catalog and all past history intact.
   const handleDeleteAllStock = async () => {
-    if (deleteAllBusy) return;
+    if (deleteAllBusy || !selectedWarehouse) return;
     setDeleteAllBusy(true);
     setDeleteAllError(null);
-    const { error: deleteError } = await deleteAllTires();
+    const { error: deleteError } = await deleteTiresInWarehouse(selectedWarehouse);
     setDeleteAllBusy(false);
     if (deleteError) {
       setDeleteAllError(`Failed to delete stock: ${deleteError}`);
       return;
     }
     clearResults();
-    setTires([]);
+    setTires(await fetchTires());
   };
 
   const handleGlobalExport = async (format: "pdf" | "excel") => {
@@ -507,11 +506,15 @@ export default function TireStock() {
           <button
             type="button"
             onClick={() => {
+              if (!selectedWarehouse) {
+                setDeleteAllError("Select a warehouse first — stock is deleted one warehouse at a time.");
+                return;
+              }
               setDeleteAllError(null);
               setDeleteAllOpen(true);
             }}
-            aria-label="Delete all stock"
-            title="Delete all stock"
+            aria-label="Delete selected warehouse stock"
+            title="Delete selected warehouse stock"
             className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-danger-soft hover:text-danger transition-colors shrink-0"
           >
             <Trash2 className="size-4" />
@@ -881,9 +884,13 @@ export default function TireStock() {
 
       <ConfirmDialog
         open={deleteAllOpen}
-        title="Delete all stock?"
-        message="Are you sure?"
-        confirmLabel="Delete all"
+        title={selectedWarehouse ? `Delete all stock in ${selectedWarehouse.label}?` : "Delete stock?"}
+        message={
+          selectedWarehouse
+            ? `This permanently removes every tyre stored in ${selectedWarehouse.label}. Other warehouses are not affected.`
+            : ""
+        }
+        confirmLabel="Delete warehouse stock"
         destructive
         onConfirm={() => {
           setDeleteAllOpen(false);
