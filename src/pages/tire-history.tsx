@@ -24,13 +24,16 @@ import {
   type HistoryType,
 } from "@/lib/history-report";
 import { exportInwardReceiptExcel, type InwardFormRow } from "@/lib/inward-excel-export";
+import { PUTAWAY_RECEIPT_PREFIX } from "@/lib/inward-putaway";
 import { exportPickSheetExcel, type PickSheetFormRow } from "@/lib/picking-excel-export";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
-const TYPE_OPTIONS: { value: HistoryType | "all"; label: string }[] = [
+// "putaway" is a view of Inward entries: only the pallets put away from the Inward page's Pending Putaway tab.
+const TYPE_OPTIONS: { value: HistoryType | "all" | "putaway"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "inward", label: "Inward" },
+  { value: "putaway", label: "Putaway" },
   { value: "picking", label: "Picking" },
   { value: "outward", label: "Outward" },
   { value: "deleted", label: "Deleted" },
@@ -54,7 +57,7 @@ export default function TireHistory() {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [typeFilter, setTypeFilter] = useState<HistoryType | "all">("all");
+  const [typeFilter, setTypeFilter] = useState<HistoryType | "all" | "putaway">("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [search, setSearch] = useState("");
@@ -80,7 +83,9 @@ export default function TireHistory() {
   // boundary it doesn't actually cross.
   const filteredRows = useMemo(() => {
     return rows.filter((r) => {
-      if (typeFilter !== "all" && r.type !== typeFilter) return false;
+      if (typeFilter === "putaway") {
+        if (r.type !== "inward" || !r.id.startsWith(PUTAWAY_RECEIPT_PREFIX)) return false;
+      } else if (typeFilter !== "all" && r.type !== typeFilter) return false;
       const key = localDateKey(r.at);
       if (dateFrom && key < dateFrom) return false;
       if (dateTo && key > dateTo) return false;
@@ -192,14 +197,14 @@ export default function TireHistory() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
-        <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-muted p-1">
+        <div className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-muted p-1">
           {TYPE_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type="button"
               onClick={() => setTypeFilter(opt.value)}
               className={cn(
-                "flex-auto whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                "flex-auto whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-medium transition-colors sm:px-3 sm:text-sm",
                 typeFilter === opt.value ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground",
               )}
             >

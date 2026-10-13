@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ArrowDownToLine, ArrowLeftRight, FileSpreadsheet, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ExchangeLocationModal from "@/components/exchange-location-modal";
 import InwardUploadModal from "@/components/inward-upload-modal";
+import PendingPutawayPanel from "@/components/pending-putaway-panel";
 import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
 import QtyStepper from "@/components/qty-stepper";
@@ -11,7 +12,9 @@ import SelectMenu from "@/components/select-menu";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import RequiredMark from "@/components/required-mark";
+import { useAuth } from "@/contexts/auth-context";
 import { locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
+import { fetchPendingPutaways, findPossibleDuplicates, insertPending, makeSubmissionTracker, type PossibleDuplicate } from "@/lib/inward-pending";
 import { insertInwardReceipts } from "@/lib/inward-receipts";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
@@ -49,7 +52,14 @@ const SHIFT_OPTIONS = [
   { value: "3", label: "Shift 3" },
 ];
 
+// Today as YYYY-MM-DD in local time - stamped on a pending pallet when it is saved.
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default function TireInward() {
+  const { user } = useAuth();
   const [tires, setTires] = useState<Tire[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
@@ -82,12 +92,30 @@ export default function TireInward() {
   const [scanningTire, setScanningTire] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
+  // Two views on this page: the normal Inward form (also where the cage saves
+  // pallets for putaway) and "Pending Putaway" (the forklift employee's side).
+  const [mode, setMode] = useState<"inward" | "pending">("inward");
+  const [pendingCount, setPendingCount] = useState(0);
+  // One fixed id per cage submission, so a double click or a retry after a
+  // network error can never create a second set of pending pallets.
+  const pendingSubmission = useRef(makeSubmissionTracker());
+  // Shown when the same Sheet No + Pallet No + SKU is already waiting or put
+  // away. Only a warning: "Save anyway" always goes through.
+  const [dupWarning, setDupWarning] = useState<{ signature: string; lines: string[] } | null>(null);
+
+  const refreshPendingCount = () => {
+    void fetchPendingPutaways().then(({ pallets, error }) => {
+      if (!error) setPendingCount(pallets.length);
+    });
+  };
+
   useEffect(() => {
     fetchTires().then(setTires);
     fetchWarehouses().then((rows) => {
       setWarehouses(rows);
       setWarehouseKey((prev) => prev || rows[0]?.key || "");
     });
+    refreshPendingCount();
   }, []);
 
   const addSelectedTire = (entry: { material: string; model: string; brand?: string; plyRatingBottom?: string }) => {
@@ -202,6 +230,80 @@ export default function TireInward() {
     setManualRow("");
     setManualCol("");
     setManualError(null);
+  };
+
+  // Cage employee: saves the pallet(s) as PENDING putaway - Driver Name, Sheet
+  // No, Shift, Pallet No, SKU and Qty (the date is stamped automatically). Nothing becomes stock until the
+  // forklift employee confirms the putaway under "Pending Putaway", so no
+  // warehouse or location is needed here.
+  const submissionSignature = JSON.stringify([
+    planNo.trim(),
+    shift,
+    pickerName.trim(),
+    selectedTires.map((t) => [t.key, t.qty, t.palletNo.trim()]),
+  ]);
+  const handleSaveForPutaway = async (force = false) => {
+    if (submitting || selectedTires.length === 0) return;
+    setConfirmError(null);
+    setSuccess(null);
+    if (!planNo.trim() || !shift) {
+      setConfirmError("Fill in Sheet No and Shift above before saving for putaway.");
+      return;
+    }
+    if (!allPalletNosFilled) {
+      setConfirmError("Fill in a pallet no for every tire before saving for putaway.");
+      return;
+    }
+    setSubmitting(true);
+    const submissionId = pendingSubmission.current.idFor(submissionSignature);
+    if (!force) {
+      const { duplicates, error: dupError } = await findPossibleDuplicates(
+        planNo.trim(),
+        selectedTires.map((t) => ({ palletNo: t.palletNo.trim(), material: t.material })),
+        `pp-${submissionId}-`,
+      );
+      if (dupError || duplicates.length > 0) {
+        setDupWarning({
+          signature: submissionSignature,
+          lines: dupError
+            ? [`Could not check for duplicates (${dupError}).`]
+            : duplicates.map(
+                (d: PossibleDuplicate) =>
+                  `Pallet ${d.palletNo} · ${d.material} · qty ${d.quantity} is already ${d.status === "pending" ? "waiting for putaway" : "put away"} under this sheet.`,
+              ),
+        });
+        setSubmitting(false);
+        return;
+      }
+    }
+    setDupWarning(null);
+    const entryDate = todayKey(); // the system's current date, stamped automatically
+    const { error } = await insertPending(
+      selectedTires.map((t) => ({
+        id: `pp-${submissionId}-${t.key}`,
+        material: t.material,
+        description: t.model,
+        brand: t.brand,
+        plyRatingBottom: t.plyRatingBottom,
+        quantity: t.qty,
+        palletNo: t.palletNo.trim(),
+        planNo: planNo.trim(),
+        shift,
+        entryDate,
+        pickerName: pickerName.trim(),
+        createdBy: user?.username ?? "",
+      })),
+    );
+    setSubmitting(false);
+    if (error) {
+      setConfirmError(`Failed to save for putaway: ${error}`);
+      return;
+    }
+    pendingSubmission.current.done();
+    const n = selectedTires.length;
+    setSelectedTires([]);
+    refreshPendingCount();
+    setSuccess(`${n} pallet${n === 1 ? "" : "s"} saved for putaway.`);
   };
 
   const removeEntry = (id: string) => setEntries((prev) => prev.filter((e) => e.id !== id));
@@ -392,6 +494,62 @@ export default function TireInward() {
     setSubmitting(false);
   };
 
+  const modeTabs = (
+    <div className="flex gap-1 rounded-xl border border-border bg-muted p-1">
+      {(
+        [
+          { value: "inward", label: "Inward" },
+          { value: "pending", label: `Pending Putaway${pendingCount > 0 ? ` (${pendingCount})` : ""}` },
+        ] as const
+      ).map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => {
+            setMode(opt.value);
+            setConfirmError(null);
+          }}
+          className={cn(
+            "flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+            mode === opt.value ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (mode === "pending") {
+    return (
+      <div className="p-4 sm:p-6 space-y-6 max-w-xl mx-auto">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+            <ArrowDownToLine className="size-6 text-primary" />
+            Inward
+          </h1>
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+          >
+            Back
+          </Link>
+        </div>
+        {modeTabs}
+        <PendingPutawayPanel
+          warehouses={warehouses}
+          onCountChange={setPendingCount}
+          onPutAway={(message) => {
+            // Stock changed outside this page's own state - refresh it so a later normal Inward starts from the truth.
+            fetchTires().then(setTires);
+            setSuccess(message);
+          }}
+        />
+        <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-xl mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -418,6 +576,8 @@ export default function TireInward() {
           </Link>
         </div>
       </div>
+
+      {modeTabs}
 
       {confirmError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{confirmError}</div>}
 
@@ -507,6 +667,42 @@ export default function TireInward() {
           </p>
         )}
       </div>
+
+      {selectedTires.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-2">
+          <button
+            type="button"
+            onClick={() => void handleSaveForPutaway()}
+            disabled={submitting || !allPalletNosFilled}
+            className="w-full rounded-xl border border-primary px-4 py-3 text-sm font-semibold text-primary hover:bg-primary-soft disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            Save for Putaway
+          </button>
+          {dupWarning && dupWarning.signature === submissionSignature && (
+            <div className="space-y-2 rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground">
+              <p className="font-medium">Possible duplicate</p>
+              <ul className="list-disc pl-5 text-xs text-muted-foreground">
+                {dupWarning.lines.map((l) => (
+                  <li key={l}>{l}</li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground">If this is a genuine repeat, you can still save it.</p>
+              <button
+                type="button"
+                onClick={() => void handleSaveForPutaway(true)}
+                disabled={submitting}
+                className="w-full rounded-xl border border-primary px-3 py-2 text-sm font-semibold text-primary hover:bg-primary-soft disabled:opacity-40 transition-colors"
+              >
+                Save anyway
+              </button>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Cage: saves the pallet, SKU and quantity above as pending. The forklift employee places it from the Pending Putaway tab.
+            Or continue below to place the tires yourself.
+          </p>
+        </div>
+      )}
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-2">

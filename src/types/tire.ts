@@ -125,6 +125,29 @@ export interface InwardReceipt {
 }
 
 
+// A pallet saved by the cage employee and waiting for the forklift employee to
+// place it in a bin (table inward_pending). Not stock until put away.
+export type PendingPutawayStatus = "pending" | "put_away" | "cancelled";
+
+export interface PendingPutaway {
+  id: string;
+  material: string;
+  description: string;
+  brand?: string;
+  plyRatingBottom?: string;
+  quantity: number;
+  palletNo: string;
+  planNo: string;
+  shift: string;
+  // Date the cage entered, as YYYY-MM-DD.
+  entryDate: string;
+  // Driver Name the cage entered.
+  pickerName: string;
+  status: PendingPutawayStatus;
+  createdBy: string;
+  createdAt: string;
+}
+
 export const STAGE_LABELS: Record<TireStage, string> = {
   production: "Production",
   "quality-check": "Quality Check",
