@@ -4,7 +4,6 @@ import { ArrowDownToLine, ArrowLeftRight, FileSpreadsheet, QrCode, Warehouse as 
 import { cn } from "@/lib/utils";
 import ExchangeLocationModal from "@/components/exchange-location-modal";
 import InwardUploadModal from "@/components/inward-upload-modal";
-import PendingPutawayPanel from "@/components/pending-putaway-panel";
 import PlanNoPicker from "@/components/plan-no-picker";
 import QrScanner from "@/components/qr-scanner";
 import QtyStepper from "@/components/qty-stepper";
@@ -14,7 +13,7 @@ import TireCatalogSearch from "@/components/tire-catalog-search";
 import RequiredMark from "@/components/required-mark";
 import { useAuth } from "@/contexts/auth-context";
 import { locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
-import { fetchPendingPutaways, findPossibleDuplicates, insertPending, makeSubmissionTracker, type PossibleDuplicate } from "@/lib/inward-pending";
+import { findPossibleDuplicates, insertPending, makeSubmissionTracker, type PossibleDuplicate } from "@/lib/inward-pending";
 import { insertInwardReceipts } from "@/lib/inward-receipts";
 import { insertPlacementLogs } from "@/lib/placement-logs";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
@@ -92,10 +91,6 @@ export default function TireInward() {
   const [scanningTire, setScanningTire] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
-  // Two views on this page: the normal Inward form (also where the cage saves
-  // pallets for putaway) and "Pending Putaway" (the forklift employee's side).
-  const [mode, setMode] = useState<"inward" | "pending">("inward");
-  const [pendingCount, setPendingCount] = useState(0);
   // One fixed id per cage submission, so a double click or a retry after a
   // network error can never create a second set of pending pallets.
   const pendingSubmission = useRef(makeSubmissionTracker());
@@ -103,19 +98,12 @@ export default function TireInward() {
   // away. Only a warning: "Save anyway" always goes through.
   const [dupWarning, setDupWarning] = useState<{ signature: string; lines: string[] } | null>(null);
 
-  const refreshPendingCount = () => {
-    void fetchPendingPutaways().then(({ pallets, error }) => {
-      if (!error) setPendingCount(pallets.length);
-    });
-  };
-
   useEffect(() => {
     fetchTires().then(setTires);
     fetchWarehouses().then((rows) => {
       setWarehouses(rows);
       setWarehouseKey((prev) => prev || rows[0]?.key || "");
     });
-    refreshPendingCount();
   }, []);
 
   const addSelectedTire = (entry: { material: string; model: string; brand?: string; plyRatingBottom?: string }) => {
@@ -302,7 +290,6 @@ export default function TireInward() {
     pendingSubmission.current.done();
     const n = selectedTires.length;
     setSelectedTires([]);
-    refreshPendingCount();
     setSuccess(`${n} pallet${n === 1 ? "" : "s"} saved for putaway.`);
   };
 
@@ -494,62 +481,6 @@ export default function TireInward() {
     setSubmitting(false);
   };
 
-  const modeTabs = (
-    <div className="flex gap-1 rounded-xl border border-border bg-muted p-1">
-      {(
-        [
-          { value: "inward", label: "Inward" },
-          { value: "pending", label: `Pending Putaway${pendingCount > 0 ? ` (${pendingCount})` : ""}` },
-        ] as const
-      ).map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => {
-            setMode(opt.value);
-            setConfirmError(null);
-          }}
-          className={cn(
-            "flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-            mode === opt.value ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-
-  if (mode === "pending") {
-    return (
-      <div className="p-4 sm:p-6 space-y-6 max-w-xl mx-auto">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
-            <ArrowDownToLine className="size-6 text-primary" />
-            Inward
-          </h1>
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-          >
-            Back
-          </Link>
-        </div>
-        {modeTabs}
-        <PendingPutawayPanel
-          warehouses={warehouses}
-          onCountChange={setPendingCount}
-          onPutAway={(message) => {
-            // Stock changed outside this page's own state - refresh it so a later normal Inward starts from the truth.
-            fetchTires().then(setTires);
-            setSuccess(message);
-          }}
-        />
-        <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
-      </div>
-    );
-  }
-
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-xl mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -576,8 +507,6 @@ export default function TireInward() {
           </Link>
         </div>
       </div>
-
-      {modeTabs}
 
       {confirmError && <div className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{confirmError}</div>}
 
@@ -698,7 +627,7 @@ export default function TireInward() {
             </div>
           )}
           <p className="text-xs text-muted-foreground">
-            Cage: saves the pallet, SKU and quantity above as pending. The forklift employee places it from the Pending Putaway tab.
+            Cage: saves the pallet, SKU and quantity above as pending. The forklift employee places it from Putaway on the home screen.
             Or continue below to place the tires yourself.
           </p>
         </div>

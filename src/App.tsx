@@ -6,6 +6,7 @@ import BayBooking from "@/pages/bay-booking";
 import BayHistory from "@/pages/bay-history";
 import Home from "@/pages/home";
 import Login from "@/pages/login";
+import PendingPutaway from "@/pages/pending-putaway";
 import PendingTyreDetail from "@/pages/pending-tyre-detail";
 import PendingTyrePlans from "@/pages/pending-tyre-plans";
 import PreparePlan from "@/pages/prepare-plan";
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/tires/new" element={<TireNew />} />
           <Route path="/tires/bulk-upload" element={<TireBulkUpload />} />
           <Route path="/tires/inward" element={<TireInward />} />
+          <Route path="/tires/putaway" element={<PendingPutaway />} />
           <Route path="/plans" element={<PreparePlan />} />
           <Route path="/tires/picking" element={<TirePicking />} />
           <Route path="/tires/outward" element={<TireOutward />} />

@@ -6,6 +6,7 @@ import {
   History,
   LayoutGrid,
   List,
+  PackageCheck,
   PackageSearch,
   ShieldCheck,
   Warehouse,
@@ -24,6 +25,7 @@ export interface NavItem {
 // button) rather than getting its own top-level circle.
 export const FEATURE_ITEMS: NavItem[] = [
   { to: "/tires/inward", label: "Inward", icon: ArrowDownToLine },
+  { to: "/tires/putaway", label: "Putaway", icon: PackageCheck },
   { to: "/tires/picking", label: "Picking", icon: ClipboardList },
   { to: "/tires/outward", label: "Outward", icon: ArrowUpFromLine },
   { to: "/tires/stock", label: "Stock", icon: PackageSearch },

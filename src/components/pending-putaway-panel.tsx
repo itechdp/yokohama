@@ -9,7 +9,7 @@ import { cancelPending, fetchPendingPutaways } from "@/lib/inward-pending";
 import { putAwayPallet } from "@/lib/inward-putaway";
 import type { PendingPutaway } from "@/types/tire";
 
-// The "Pending Putaway" tab of the Inward page - the forklift employee's side.
+// The body of the Putaway page (/tires/putaway) - the forklift employee's side.
 // Pick a pallet the cage has saved, choose Warehouse + Row + Position, confirm.
 // Sheet no / date / shift / driver / SKU / pallet no / quantity come from the
 // cage's record and can't be edited here; one pallet goes to one bin. Stock is
@@ -20,9 +20,9 @@ export default function PendingPutawayPanel({
   onPutAway,
 }: {
   warehouses: WarehouseDef[];
-  // Keeps the "Pending Putaway (n)" tab badge in step with the list.
+  // Optional: lets a parent keep a count badge in step with the list.
   // eslint-disable-next-line no-unused-vars
-  onCountChange: (count: number) => void;
+  onCountChange?: (count: number) => void;
   // Called after a successful putaway so the page can refresh its own data.
   // eslint-disable-next-line no-unused-vars
   onPutAway: (message: string) => void;
@@ -50,7 +50,7 @@ export default function PendingPutawayPanel({
     if (loadError) setError(`Could not load pending pallets: ${loadError}`);
     else {
       setPending(pallets);
-      onCountChange(pallets.length);
+      onCountChange?.(pallets.length);
     }
     setLoading(false);
   };
