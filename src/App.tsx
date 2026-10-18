@@ -19,10 +19,8 @@ import TirePicking from "@/pages/tire-picking";
 import TireSkuCatalog from "@/pages/tire-sku-catalog";
 import TireStock from "@/pages/tire-stock";
 import Warehouses from "@/pages/warehouses";
-import { useKioskLock } from "@/hooks/use-kiosk-lock";
 
 export default function App() {
-  useKioskLock();
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
