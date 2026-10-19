@@ -37,9 +37,10 @@ export default function Home() {
               type="button"
               onClick={logout}
               aria-label="Log out"
-              className="flex size-10 items-center justify-center rounded-full bg-[rgba(0,0,0,0.3)] text-white backdrop-blur-sm transition-transform active:scale-95"
+              className="flex h-10 items-center justify-center gap-1.5 rounded-full bg-[rgba(0,0,0,0.3)] px-3.5 text-sm font-medium text-white backdrop-blur-sm transition-transform active:scale-95"
             >
               <LogOut className="size-5" />
+              Logout
             </button>
           </div>
         </header>
