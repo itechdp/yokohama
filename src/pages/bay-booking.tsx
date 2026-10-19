@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { ArrowRight, ChevronDown, ClipboardList, Filter, LayoutGrid, Search } from "lucide-react";
+import { ArrowRight, Ban, ChevronDown, ClipboardList, Filter, LayoutGrid, Search } from "lucide-react";
 import { fetchBayBookings, upsertBayBooking } from "@/lib/bay-bookings";
 import { syncBayHistory } from "@/lib/bay-history";
 import { cn } from "@/lib/utils";
@@ -86,13 +86,22 @@ export default function BayBooking() {
           <LayoutGrid className="size-6 text-primary" />
           Loading Bay
         </h1>
-        <Link
-          to="/bays/pending"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
-        >
-          <ClipboardList className="size-4" />
-          Pending Tyre
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            to="/bays/pending"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
+          >
+            <ClipboardList className="size-4" />
+            Pending Tyre
+          </Link>
+          <Link
+            to="/bays/block"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
+          >
+            <Ban className="size-4" />
+            Block Tyres
+          </Link>
+        </div>
       </div>
 
       <div className="flex items-center gap-2">

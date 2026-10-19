@@ -211,6 +211,21 @@ export interface PlanPendingTire {
   createdAt: string;
 }
 
+// A tyre (SKU / Material) + qty blocked for a dispatch plan, recorded from the
+// Loading Bay's "Block Tyres" option. Permanent once saved; record-keeping only.
+export interface PlanBlockTire {
+  id: number;
+  planNo: string;
+  material: string;
+  description: string;
+  qty: number;
+  createdBy: string;
+  createdAt: string;
+  // Set when someone unblocks it. The record is kept (History), never deleted.
+  unblockedAt?: string;
+  unblockedBy?: string;
+}
+
 export const BAY_STATUS_LABELS: Record<BayStatus, string> = {
   closed: "Closed",
   running: "Running",

@@ -13,6 +13,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
+import BlockTyresHistoryPanel from "@/components/block-tyres-history-panel";
 import SelectMenu from "@/components/select-menu";
 import { exportDeletedTiresExcel } from "@/lib/deleted-tires-excel-export";
 import {
@@ -30,13 +31,16 @@ import { cn } from "@/lib/utils";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 // "putaway" is a view of Inward entries: only the pallets put away from the Inward page's Pending Putaway tab.
-const TYPE_OPTIONS: { value: HistoryType | "all" | "putaway"; label: string }[] = [
+// "block" shows the Block Tyres records (Loading Bay > Block Tyres) instead of plan batches.
+type TypeFilter = HistoryType | "all" | "putaway" | "block";
+const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "inward", label: "Inward" },
   { value: "putaway", label: "Putaway" },
   { value: "picking", label: "Picking" },
   { value: "outward", label: "Outward" },
   { value: "deleted", label: "Deleted" },
+  { value: "block", label: "Block" },
 ];
 
 function formatDateTime(iso: string): string {
@@ -57,7 +61,7 @@ export default function TireHistory() {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [typeFilter, setTypeFilter] = useState<HistoryType | "all" | "putaway">("all");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [search, setSearch] = useState("");
@@ -258,7 +262,15 @@ export default function TireHistory() {
         )}
       </div>
 
-      {loading ? (
+      {typeFilter === "block" ? (
+        <BlockTyresHistoryPanel
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          search={search}
+          pageSize={pageSize}
+          onPageSizeChange={setPageSize}
+        />
+      ) : loading ? (
         <div className="rounded-2xl border border-border bg-card p-8 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
           <Loader2 className="size-4 animate-spin" />
           Loading history…

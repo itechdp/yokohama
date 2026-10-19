@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test:putaway": "esbuild tests/putaway/putaway.test.ts --bundle --platform=node --outfile=node_modules/.cache/putaway.cjs --alias:@/lib/supabase=./tests/putaway/fake-supabase.ts --alias:@=./src --log-level=error && node node_modules/.cache/putaway.cjs",
+    "test:block-tyres": "esbuild tests/block-tyres/block-tyres.test.ts --bundle --platform=node --outfile=node_modules/.cache/block-tyres.cjs --alias:@/lib/supabase=./tests/block-tyres/fake-supabase.ts --alias:@=./src --log-level=error && node node_modules/.cache/block-tyres.cjs",
     "test:delete-safety": "esbuild tests/delete-safety/delete-safety.test.ts --bundle --platform=node --outfile=node_modules/.cache/delete-safety.cjs --alias:@/lib/supabase=./tests/delete-safety/fake-supabase.ts --alias:@=./src --log-level=error && node node_modules/.cache/delete-safety.cjs"
   },
   "dependencies": {
