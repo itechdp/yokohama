@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchTireSkusPage, searchTireSkus } from "@/lib/tire-skus";
 import type { TireSkuRow } from "@/lib/supabase";
+import type { CaseNo } from "@/types/tire";
 
 // Shared by Inward and Picking's "pick a tire type" step. Always shows
 // something: the first page of the catalog when there's no query, filtered
@@ -11,9 +12,12 @@ import type { TireSkuRow } from "@/lib/supabase";
 export default function TireCatalogSearch({
   alreadySelected,
   onSelect,
+  caseNo,
 }: {
   alreadySelected: string[];
   onSelect: (sku: TireSkuRow) => void;
+  // Optional: only list SKUs of this case. Omitted = the whole catalog (Picking, Outward).
+  caseNo?: CaseNo;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TireSkuRow[]>([]);
@@ -23,13 +27,13 @@ export default function TireCatalogSearch({
     const q = query.trim();
     const id = ++requestId.current;
     const timeout = setTimeout(() => {
-      const request = q ? searchTireSkus(q, 20) : fetchTireSkusPage({ page: 0, pageSize: 20 }).then((p) => p.rows);
+      const request = q ? searchTireSkus(q, 20, caseNo) : fetchTireSkusPage({ page: 0, pageSize: 20, caseNo }).then((p) => p.rows);
       request.then((rows) => {
         if (requestId.current === id) setResults(rows);
       });
     }, 250);
     return () => clearTimeout(timeout);
-  }, [query]);
+  }, [query, caseNo]);
 
   return (
     <div className="space-y-2">
@@ -46,7 +50,9 @@ export default function TireCatalogSearch({
       </div>
       <ul className="max-h-56 overflow-y-auto rounded-xl border border-border divide-y divide-border">
         {results.length === 0 ? (
-          <li className="px-3 py-4 text-center text-xs text-muted-foreground">No matches.</li>
+          <li className="px-3 py-4 text-center text-xs text-muted-foreground">
+            {caseNo ? `No Case ${caseNo} tires found.` : "No matches."}
+          </li>
         ) : (
           results.map((sku) => {
             const isSelected = alreadySelected.includes(sku.material);

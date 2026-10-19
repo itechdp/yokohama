@@ -18,6 +18,7 @@ export interface TireSkuRow {
   description: string;
   ply_rating_bottom: string | null;
   brand: string | null;
+  case_no?: number | null;
   created_at: string;
   updated_at: string;
 }

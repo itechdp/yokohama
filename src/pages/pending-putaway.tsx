@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { PackageCheck } from "lucide-react";
+import CaseSelector from "@/components/case-selector";
 import PendingPutawayPanel from "@/components/pending-putaway-panel";
 import SuccessOverlay from "@/components/success-overlay";
 import type { WarehouseDef } from "@/data/warehouse-bins";
+import { useSelectedCase } from "@/hooks/use-selected-case";
 import { fetchWarehouses } from "@/lib/warehouses";
 
 // The forklift employee's side of Inward: pallets the cage saved wait here
 // until they are put away into a bin.
 export default function PendingPutaway() {
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
+  const [caseNo, setCaseNo] = useSelectedCase();
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,7 +33,11 @@ export default function PendingPutaway() {
           Back
         </Link>
       </div>
-      <PendingPutawayPanel warehouses={warehouses} onPutAway={setSuccess} />
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-1.5">
+        <span className="text-sm font-medium text-foreground">Case</span>
+        <CaseSelector value={caseNo} onChange={setCaseNo} />
+      </div>
+      <PendingPutawayPanel warehouses={warehouses} caseNo={caseNo} onPutAway={setSuccess} />
       <SuccessOverlay message={success} onDone={() => setSuccess(null)} />
     </div>
   );

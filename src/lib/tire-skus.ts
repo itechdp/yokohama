@@ -1,5 +1,16 @@
 import { supabase, type TireSkuRow } from "@/lib/supabase";
 import type { CatalogRow } from "@/lib/tire-catalog";
+import type { CaseNo } from "@/types/tire";
+
+// PostgREST `or` filter for "this text query AND (this case OR no case yet)".
+// SKUs not tagged with a case are offered under both cases, so the catalog works
+// as before until it is tagged; a tagged SKU only shows under its own case.
+function caseOrNullFilter(q: string, caseNo: CaseNo): string {
+  const caseConds = [`case_no.eq.${caseNo}`, "case_no.is.null"];
+  if (!q) return caseConds.join(",");
+  const textConds = [`material.ilike.%${q}%`, `description.ilike.%${q}%`];
+  return textConds.flatMap((t) => caseConds.map((c) => `and(${t},${c})`)).join(",");
+}
 
 export interface TireSkuPage {
   rows: TireSkuRow[];
@@ -13,8 +24,9 @@ export async function fetchTireSkusPage(params: {
   query?: string;
   page: number;
   pageSize: number;
+  caseNo?: CaseNo;
 }): Promise<TireSkuPage> {
-  const { query, page, pageSize } = params;
+  const { query, page, pageSize, caseNo } = params;
   const from = page * pageSize;
   const to = from + pageSize - 1;
 
@@ -25,7 +37,9 @@ export async function fetchTireSkusPage(params: {
     .range(from, to);
 
   const q = query?.trim();
-  if (q) {
+  if (caseNo) {
+    request = request.or(caseOrNullFilter(q ?? "", caseNo));
+  } else if (q) {
     request = request.or(`material.ilike.%${q}%,description.ilike.%${q}%`);
   }
 
@@ -81,14 +95,14 @@ export async function fetchTireSkusByMaterials(materials: string[]): Promise<Map
 }
 
 // Looks up SKUs by material/description for the Add Tire autocomplete.
-export async function searchTireSkus(query: string, limit = 8): Promise<TireSkuRow[]> {
+export async function searchTireSkus(query: string, limit = 8, caseNo?: CaseNo): Promise<TireSkuRow[]> {
   const q = query.trim();
   if (!q) return [];
 
   const { data, error } = await supabase
     .from("tire_skus")
     .select("*")
-    .or(`material.ilike.%${q}%,description.ilike.%${q}%`)
+    .or(caseNo ? caseOrNullFilter(q, caseNo) : `material.ilike.%${q}%,description.ilike.%${q}%`)
     .order("material", { ascending: true })
     .limit(limit);
 

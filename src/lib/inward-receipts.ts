@@ -16,6 +16,7 @@ interface InwardReceiptRow {
   received_at: string;
   received_by: string;
   notes: string;
+  case_no?: number | null;
 }
 
 function toRow(r: InwardReceipt) {
@@ -33,6 +34,7 @@ function toRow(r: InwardReceipt) {
     received_at: r.receivedAt,
     received_by: r.receivedBy,
     notes: r.notes,
+    ...(r.caseNo ? { case_no: r.caseNo } : {}),
   };
 }
 
@@ -51,6 +53,7 @@ function fromRow(row: InwardReceiptRow): InwardReceipt {
     receivedAt: row.received_at,
     receivedBy: row.received_by,
     notes: row.notes,
+    caseNo: row.case_no === 1 || row.case_no === 2 ? row.case_no : undefined,
   };
 }
 

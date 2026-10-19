@@ -1,3 +1,6 @@
+// Inward / Putaway are split into two cases; see supabase/migrations/case_selection.sql.
+export type CaseNo = 1 | 2;
+
 export type TireStage =
   | "production"
   | "quality-check"
@@ -122,6 +125,7 @@ export interface InwardReceipt {
   receivedAt: string;
   receivedBy: string;
   notes: string;
+  caseNo?: CaseNo;
 }
 
 
@@ -146,6 +150,8 @@ export interface PendingPutaway {
   status: PendingPutawayStatus;
   createdBy: string;
   createdAt: string;
+  // undefined = saved before cases existed (no reliable case).
+  caseNo?: CaseNo;
 }
 
 export const STAGE_LABELS: Record<TireStage, string> = {

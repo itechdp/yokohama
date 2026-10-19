@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { PendingPutaway, PendingPutawayStatus } from "@/types/tire";
+import type { CaseNo, PendingPutaway, PendingPutawayStatus } from "@/types/tire";
 
 // Pallets the cage employee has saved that the forklift employee has not placed
 // yet (table inward_pending - see supabase/migrations/inward_pending.sql).
@@ -23,6 +23,7 @@ interface PendingRow {
   status: PendingPutawayStatus;
   created_by: string;
   created_at: string;
+  case_no: number | null;
 }
 
 function fromRow(row: PendingRow): PendingPutaway {
@@ -41,13 +42,14 @@ function fromRow(row: PendingRow): PendingPutaway {
     status: row.status,
     createdBy: row.created_by,
     createdAt: row.created_at,
+    caseNo: row.case_no === 1 || row.case_no === 2 ? row.case_no : undefined,
   };
 }
 
 export type NewPending = Pick<
   PendingPutaway,
   "id" | "material" | "description" | "brand" | "plyRatingBottom" | "quantity" | "palletNo" | "planNo" | "shift" | "entryDate" | "pickerName" | "createdBy"
->;
+> & { caseNo: CaseNo };
 
 // Cage entry: one row per pallet, always created as 'pending'. Inserted with
 // "ignore duplicates" on the row id, so sending the same submission twice
@@ -70,6 +72,7 @@ export async function insertPending(rows: NewPending[]): Promise<{ error: string
       picker_name: r.pickerName,
       status: "pending",
       created_by: r.createdBy,
+      case_no: r.caseNo,
     })),
     { onConflict: "id", ignoreDuplicates: true },
   );
@@ -81,13 +84,12 @@ export async function insertPending(rows: NewPending[]): Promise<{ error: string
 }
 
 // Pallets still waiting for the forklift, oldest first. A failed read is an
-// error, not "no pallets".
-export async function fetchPendingPutaways(): Promise<{ pallets: PendingPutaway[]; error: string | null }> {
-  const { data, error } = await supabase
-    .from("inward_pending")
-    .select("*")
-    .eq("status", "pending")
-    .order("created_at", { ascending: true });
+// error, not "no pallets". With `caseNo`, only that case's pallets - plus any
+// saved before cases existed (case_no NULL), so an old pallet is never stranded.
+export async function fetchPendingPutaways(caseNo?: CaseNo): Promise<{ pallets: PendingPutaway[]; error: string | null }> {
+  let request = supabase.from("inward_pending").select("*").eq("status", "pending");
+  if (caseNo) request = request.or(`case_no.eq.${caseNo},case_no.is.null`);
+  const { data, error } = await request.order("created_at", { ascending: true });
   if (error) {
     console.warn("inward_pending fetch failed:", error.message);
     return { pallets: [], error: error.message };

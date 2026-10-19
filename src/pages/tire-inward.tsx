@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ArrowDownToLine, ArrowLeftRight, FileSpreadsheet, QrCode, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import CaseSelector from "@/components/case-selector";
 import ExchangeLocationModal from "@/components/exchange-location-modal";
 import InwardUploadModal from "@/components/inward-upload-modal";
 import PlanNoPicker from "@/components/plan-no-picker";
@@ -12,10 +13,12 @@ import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import RequiredMark from "@/components/required-mark";
 import { useAuth } from "@/contexts/auth-context";
+import { useSelectedCase } from "@/hooks/use-selected-case";
 import { locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
 import { findPossibleDuplicates, insertPending, makeSubmissionTracker, type PossibleDuplicate } from "@/lib/inward-pending";
 import { insertInwardReceipts } from "@/lib/inward-receipts";
 import { insertPlacementLogs } from "@/lib/placement-logs";
+import { fetchTireSkuByMaterial, fetchTireSkusByMaterials } from "@/lib/tire-skus";
 import { getStoredPlanNo, setStoredPlanNo } from "@/lib/plan-no-draft";
 import { touchPlanNumber } from "@/lib/plan-numbers";
 import { buildTireFromCatalogRow } from "@/lib/tire-catalog";
@@ -23,7 +26,7 @@ import { insertTireHistory } from "@/lib/tire-history";
 import { fetchTireBySkuQrCode, fetchTires, upsertTires } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { TireSkuRow } from "@/lib/supabase";
-import type { InwardReceipt, PlacementLog, StageHistory, Tire } from "@/types/tire";
+import type { CaseNo, InwardReceipt, PlacementLog, StageHistory, Tire } from "@/types/tire";
 
 interface SelectedTire {
   key: string;
@@ -43,6 +46,7 @@ interface InwardEntry {
   tires: SelectedTire[];
   warehouse: WarehouseDef;
   bins: string[];
+  caseNo: CaseNo;
 }
 
 const SHIFT_OPTIONS = [
@@ -60,6 +64,8 @@ function todayKey(): string {
 export default function TireInward() {
   const { user } = useAuth();
   const [tires, setTires] = useState<Tire[]>([]);
+  // Case 1 / Case 2: only that case's tires are offered, and what is saved is tagged with it.
+  const [caseNo, setCaseNo] = useSelectedCase();
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
   // Groups every Inward confirmed today under one Plan No. Which plan
@@ -73,6 +79,16 @@ export default function TireInward() {
   const handlePlanNoChange = (value: string) => {
     setPlanNo(value);
     setStoredPlanNo("inward", value);
+  };
+
+  // Switching case drops the tires picked so far (they belong to the other
+  // case); already-staged entries keep the case they were staged under.
+  const handleCaseChange = (next: CaseNo) => {
+    if (next === caseNo) return;
+    setCaseNo(next);
+    setSelectedTires([]);
+    setConfirmError(null);
+    setDupWarning(null);
   };
 
   const [selectedTires, setSelectedTires] = useState<SelectedTire[]>([]);
@@ -129,7 +145,10 @@ export default function TireInward() {
     const skuQrCode = code.trim();
     if (!skuQrCode) return false;
     const tire = await fetchTireBySkuQrCode(skuQrCode);
-    if (!tire) return false;
+    if (!tire || !caseNo) return false;
+    // Only a tire of the selected case can be added.
+    const sku = await fetchTireSkuByMaterial(tire.serialNumber);
+    if (!sku || (sku.case_no != null && sku.case_no !== caseNo)) return false;
     if (selectedTires.some((t) => t.material.toLowerCase() === tire.serialNumber.toLowerCase())) return true;
     addSelectedTire({
       material: tire.serialNumber,
@@ -198,6 +217,10 @@ export default function TireInward() {
   const handleAddEntry = () => {
     setConfirmError(null);
     if (selectedTires.length === 0 || !selectedWarehouse) return;
+    if (!caseNo) {
+      setConfirmError("Select Case 1 or Case 2 in step 1 first.");
+      return;
+    }
     if (!allPalletNosFilled) {
       setConfirmError("Fill in a pallet no for every tire before confirming.");
       return;
@@ -211,7 +234,7 @@ export default function TireInward() {
     }
     setEntries((prev) => [
       ...prev,
-      { id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, tires: selectedTires, warehouse: selectedWarehouse, bins },
+      { id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, tires: selectedTires, warehouse: selectedWarehouse, bins, caseNo },
     ]);
     setSelectedTires([]);
     setSelectedBins(new Set());
@@ -225,6 +248,7 @@ export default function TireInward() {
   // forklift employee confirms the putaway under "Pending Putaway", so no
   // warehouse or location is needed here.
   const submissionSignature = JSON.stringify([
+    caseNo,
     planNo.trim(),
     shift,
     pickerName.trim(),
@@ -234,6 +258,10 @@ export default function TireInward() {
     if (submitting || selectedTires.length === 0) return;
     setConfirmError(null);
     setSuccess(null);
+    if (!caseNo) {
+      setConfirmError("Select Case 1 or Case 2 in step 1 first.");
+      return;
+    }
     if (!planNo.trim() || !shift) {
       setConfirmError("Fill in Sheet No and Shift above before saving for putaway.");
       return;
@@ -280,6 +308,7 @@ export default function TireInward() {
         entryDate,
         pickerName: pickerName.trim(),
         createdBy: user?.username ?? "",
+        caseNo,
       })),
     );
     setSubmitting(false);
@@ -307,7 +336,26 @@ export default function TireInward() {
   // to inward" to retry instead of losing them.
   const handleUploadImport = async (imported: { tires: SelectedTire[]; warehouse: WarehouseDef; bins: string[] }[]) => {
     setConfirmError(null);
-    const newEntries = imported.map((e) => ({ id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...e }));
+    if (!caseNo) {
+      setConfirmError("Select Case 1 or Case 2 in step 1 before uploading.");
+      return;
+    }
+    // Nothing from the other case may be inwarded under this one: refuse the
+    // whole upload and name the offending SKUs instead of importing part of it.
+    const skus = await fetchTireSkusByMaterials(imported.flatMap((e) => e.tires.map((t) => t.material)));
+    const wrongCase = Array.from(
+      new Set(imported.flatMap((e) => e.tires.map((t) => t.material)).filter((m) => {
+          const sku = skus.get(m.trim().toUpperCase());
+          return !sku || (sku.case_no != null && sku.case_no !== caseNo);
+        })),
+    );
+    if (wrongCase.length > 0) {
+      setConfirmError(
+        `Upload not imported: ${wrongCase.length} SKU${wrongCase.length === 1 ? " is" : "s are"} not in Case ${caseNo} (${wrongCase.slice(0, 5).join(", ")}${wrongCase.length > 5 ? ", …" : ""}). Switch case or fix the sheet.`,
+      );
+      return;
+    }
+    const newEntries = imported.map((e) => ({ id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...e, caseNo }));
     setEntries((prev) => [...prev, ...newEntries]);
     await saveEntries(newEntries, false);
   };
@@ -331,7 +379,7 @@ export default function TireInward() {
     }
 
     const now = new Date().toISOString();
-    const assignments: { tireId: string; bin: string; model: string; material: string; palletNo: string; warehouse: WarehouseDef }[] = [];
+    const assignments: { tireId: string; bin: string; model: string; material: string; palletNo: string; warehouse: WarehouseDef; caseNo: CaseNo }[] = [];
     const extraTires: Tire[] = [];
     // Production-stage units already claimed by an earlier entry in this batch.
     const usedIds = new Set<string>();
@@ -356,7 +404,7 @@ export default function TireInward() {
 
         for (const tireId of existingIds) {
           usedIds.add(tireId);
-          assignments.push({ tireId, bin: nextBin(), model: t.model, material: t.material, palletNo: t.palletNo.trim(), warehouse: entry.warehouse });
+          assignments.push({ tireId, bin: nextBin(), model: t.model, material: t.material, palletNo: t.palletNo.trim(), warehouse: entry.warehouse, caseNo: entry.caseNo });
         }
 
         const shortfall = t.qty - existingIds.length;
@@ -375,7 +423,7 @@ export default function TireInward() {
               now,
             ),
           );
-          assignments.push({ tireId: id, bin: nextBin(), model: t.model, material: t.material, palletNo: t.palletNo.trim(), warehouse: entry.warehouse });
+          assignments.push({ tireId: id, bin: nextBin(), model: t.model, material: t.material, palletNo: t.palletNo.trim(), warehouse: entry.warehouse, caseNo: entry.caseNo });
         }
       }
     }
@@ -434,15 +482,15 @@ export default function TireInward() {
     // PALLET on the exported sheet are always exact), persisted under the
     // active Plan No so the export — and any later inward under the same plan
     // no today — can pull every receipt together.
-    const grouped = new Map<string, { material: string; model: string; palletNo: string; warehouse: string; location: string; qty: number }>();
+    const grouped = new Map<string, { material: string; model: string; palletNo: string; warehouse: string; location: string; qty: number; caseNo: CaseNo }>();
     for (const a of assignments) {
       const location = locationOf(a);
-      const key = `${a.material}|${a.palletNo}|${location}`;
+      const key = `${a.material}|${a.palletNo}|${location}|${a.caseNo}`;
       const existing = grouped.get(key);
       if (existing) {
         existing.qty += 1;
       } else {
-        grouped.set(key, { material: a.material, model: a.model, palletNo: a.palletNo, warehouse: a.warehouse.label, location, qty: 1 });
+        grouped.set(key, { material: a.material, model: a.model, palletNo: a.palletNo, warehouse: a.warehouse.label, location, qty: 1, caseNo: a.caseNo });
       }
     }
     const receipts: InwardReceipt[] = Array.from(grouped.values()).map((g, idx) => ({
@@ -459,6 +507,7 @@ export default function TireInward() {
       receivedAt: now,
       receivedBy: "Forklift operator",
       notes: "",
+      caseNo: g.caseNo,
     }));
     const { error: receiptError } = await insertInwardReceipts(receipts);
     if (receiptError) {
@@ -512,6 +561,10 @@ export default function TireInward() {
 
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">1. Plan details</h2>
+        <div className="space-y-1.5">
+          <span className="text-sm font-medium text-foreground">Case<RequiredMark /></span>
+          <CaseSelector value={caseNo} onChange={handleCaseChange} disabled={submitting} />
+        </div>
         {/* Always one row: Driver Name, Sheet No, Shift. */}
         <div className="grid grid-cols-3 gap-2 sm:gap-3">
           <label className="block min-w-0 space-y-1.5">
@@ -542,6 +595,7 @@ export default function TireInward() {
           <button
             type="button"
             onClick={() => setScanningTire(true)}
+            disabled={!caseNo}
             aria-label="Scan tire QR"
             title="Scan tire QR"
             className="inline-flex items-center justify-center rounded-xl border border-border bg-card p-2 text-foreground hover:bg-muted transition-colors shrink-0"
@@ -550,7 +604,13 @@ export default function TireInward() {
           </button>
         </div>
 
-        <TireCatalogSearch alreadySelected={selectedTires.map((t) => t.material)} onSelect={addTireFromCatalog} />
+        {caseNo ? (
+          <TireCatalogSearch alreadySelected={selectedTires.map((t) => t.material)} onSelect={addTireFromCatalog} caseNo={caseNo} />
+        ) : (
+          <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
+            Select Case 1 or Case 2 in step 1 to see its tires.
+          </p>
+        )}
 
         {selectedTires.length > 0 && (
           <ul className="space-y-2 max-h-96 overflow-y-auto">
@@ -861,7 +921,7 @@ export default function TireInward() {
       {scanningTire && (
         <QrScanner
           title="Scan tire QR"
-          notFoundLabel="tire"
+          notFoundLabel={caseNo ? `Case ${caseNo} tire` : "tire"}
           onDecode={handleTireDecode}
           onClose={() => setScanningTire(false)}
         />

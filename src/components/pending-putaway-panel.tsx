@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ConfirmDialog from "@/components/confirm-dialog";
@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/auth-context";
 import type { WarehouseDef } from "@/data/warehouse-bins";
 import { cancelPending, fetchPendingPutaways } from "@/lib/inward-pending";
 import { putAwayPallet } from "@/lib/inward-putaway";
-import type { PendingPutaway } from "@/types/tire";
+import type { CaseNo, PendingPutaway } from "@/types/tire";
 
 // The body of the Putaway page (/tires/putaway) - the forklift employee's side.
 // Pick a pallet the cage has saved, choose Warehouse + Row + Position, confirm.
@@ -16,10 +16,13 @@ import type { PendingPutaway } from "@/types/tire";
 // created only when the putaway is confirmed (see putAwayPallet).
 export default function PendingPutawayPanel({
   warehouses,
+  caseNo,
   onCountChange,
   onPutAway,
 }: {
   warehouses: WarehouseDef[];
+  // Only this case's pallets are listed and can be put away (null = none chosen yet).
+  caseNo: CaseNo | null;
   // Optional: lets a parent keep a count badge in step with the list.
   // eslint-disable-next-line no-unused-vars
   onCountChange?: (count: number) => void;
@@ -43,8 +46,19 @@ export default function PendingPutawayPanel({
   const [error, setError] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<PendingPutaway | null>(null);
 
+  // Only the newest request may update the list, so a slow answer for the
+  // previous case can't overwrite the case now on screen.
+  const requestId = useRef(0);
+
   const reload = async () => {
-    const { pallets, error: loadError } = await fetchPendingPutaways();
+    if (!caseNo) {
+      setPending([]);
+      setLoading(false);
+      return;
+    }
+    const id = ++requestId.current;
+    const { pallets, error: loadError } = await fetchPendingPutaways(caseNo);
+    if (id !== requestId.current) return;
     // A failed read keeps the list already on screen and says so, instead of
     // showing an empty list as if nothing were waiting.
     if (loadError) setError(`Could not load pending pallets: ${loadError}`);
@@ -55,10 +69,20 @@ export default function PendingPutawayPanel({
     setLoading(false);
   };
 
+  // Re-load whenever the case changes, and drop the selection and location
+  // picked for the other case's pallet.
   useEffect(() => {
+    setLoading(true);
+    setPending([]);
+    setSelectedId(null);
+    setSearch("");
+    setError(null);
+    setCol("");
+    setRow("");
+    setBin(null);
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [caseNo]);
 
   const selected = pending.find((p) => p.id === selectedId) ?? null;
   const selectedWarehouse = warehouses.find((w) => w.key === warehouseKey) ?? null;
@@ -93,6 +117,12 @@ export default function PendingPutawayPanel({
 
   const confirmPutaway = async () => {
     if (busy || !selected || !selectedWarehouse || !bin) return;
+    // A pallet of the other case is never put away from this view (pallets with
+    // no case, saved before cases existed, can be placed under either).
+    if (selected.caseNo && selected.caseNo !== caseNo) {
+      setError(`Pallet ${selected.palletNo} belongs to Case ${selected.caseNo}. Switch case to put it away.`);
+      return;
+    }
     setBusy(true);
     setError(null);
     const { error: putError, alreadyDone, location } = await putAwayPallet(selected.id, selectedWarehouse.key, bin, user?.id);
@@ -139,11 +169,13 @@ export default function PendingPutawayPanel({
           autoComplete="off"
           className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
-        {loading ? (
+        {!caseNo ? (
+          <p className="text-sm text-muted-foreground">Select Case 1 or Case 2 above to see its pending pallets.</p>
+        ) : loading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : visible.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {pending.length === 0 ? "No pallets waiting for putaway." : "No pallets match your search."}
+            {pending.length === 0 ? `No Case ${caseNo} pallets waiting for putaway.` : "No pallets match your search."}
           </p>
         ) : (
           <ul className="space-y-2 max-h-96 overflow-y-auto">
@@ -167,6 +199,7 @@ export default function PendingPutawayPanel({
                     <p className="font-medium text-foreground break-words">{p.description}</p>
                     <p className="text-xs text-muted-foreground">
                       Pallet {p.palletNo} · Qty {p.quantity} · {p.material}
+                      {p.caseNo ? "" : " · No case (saved before cases)"}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Sheet {p.planNo} · {p.entryDate.split("-").reverse().join("/")} · Shift {p.shift}

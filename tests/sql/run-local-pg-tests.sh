@@ -231,6 +231,24 @@ put b wh1 A01-01 >/dev/null; F=$(fp)
 R=$(as anon "select public.cancel_pending_pallet('b','$UID1')"); ok "$(has "$R" 'put_away and cannot be cancelled')" "a put-away pallet can't be cancelled"
 ok "$(eq "$F" "$(fp)")" "...stock unchanged"
 
+echo; echo "== case selection (case_selection.sql)"
+reseed 1
+ok "$(load supabase/migrations/case_selection.sql)" "case_selection.sql applies"
+ok "$(load supabase/migrations/case_selection.sql)" "...and can be re-run"
+ok "$(eq "$(DB -c "select count(*) from information_schema.columns where table_schema='public' and column_name='case_no' and is_nullable='YES' and table_name in ('tire_skus','inward_pending','inward_receipts')")" 3)" "case_no added (nullable) to tire_skus, inward_pending, inward_receipts"
+ok "$(eq "$(n inward_pending "case_no is not null")" 0)" "existing pending pallets keep case_no NULL (no guessed case)"
+R=$(DB -c "update public.inward_pending set case_no = 3 where id='a'" 2>&1); ok "$(has "$R" 'check constraint')" "only case 1 or 2 is accepted"
+as anon "insert into public.inward_pending (id, material, description, quantity, pallet_no, plan_no, shift, case_no) values ('c1','M1','Tire M1',2,'P-c1','SHEET-9','1',1), ('c2','M2','Tire M2',2,'P-c2','SHEET-9','1',2)" >/dev/null
+ok "$(eq "$(n inward_pending "case_no = 1")/$(n inward_pending "case_no = 2")" "1/1")" "the cage insert (anon, pending only) stores the case"
+ok "$(eq "$(n inward_pending "status='pending' and (case_no = 1 or case_no is null)")" 4)" "Case 1 view = Case 1 pallets + legacy (no-case) pallets, never Case 2"
+ok "$(eq "$(n inward_pending "status='pending' and (case_no = 2 or case_no is null)")" 4)" "Case 2 view = Case 2 pallets + legacy pallets, never Case 1"
+put c1 wh1 A01-01 >/dev/null
+ok "$(eq "$(DB -c "select case_no from inward_receipts where id='ir-c1'")" 1)" "a putaway receipt copies the pallet's case (putaway_pallet itself unchanged)"
+put a wh1 A01-02 >/dev/null
+ok "$(eq "$(DB -c "select coalesce(case_no::text,'null') from inward_receipts where id='ir-a'")" null)" "a legacy pallet's receipt stays NULL"
+as anon "insert into public.inward_receipts (id, material, description, warehouse, location, quantity, plan_no, pallet_no, shift, picker_name, received_by, case_no) values ('ir-direct','M2','Tire M2','WH-1','WH-1 - Bin A01-03',1,'S','P','1','x','y',2)" >/dev/null
+ok "$(eq "$(DB -c "select case_no from inward_receipts where id='ir-direct'")" 2)" "a direct inward receipt keeps the case it was given"
+
 echo; echo "== table permissions and the cage insert (anon, authenticated, and PostgREST-style authenticator)"
 for who in anon authenticated authenticator; do
   reseed 0
