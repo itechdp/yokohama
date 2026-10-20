@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { CaseNo } from "@/types/tire";
 
-// Case 1 / Case 2 switch used on Inward and Putaway. `value` is null until
+// Cage 1 / Cage 2 switch used on Inward and Putaway. `value` is null until
 // the operator has chosen a case (neither button is highlighted).
 export default function CaseSelector({
   value,
@@ -14,7 +14,7 @@ export default function CaseSelector({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex gap-1 rounded-xl border border-border bg-muted p-1" role="group" aria-label="Case">
+    <div className="flex gap-1 rounded-xl border border-border bg-muted p-1" role="group" aria-label="Cage">
       {([1, 2] as const).map((n) => (
         <button
           key={n}
@@ -27,7 +27,7 @@ export default function CaseSelector({
             value === n ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground",
           )}
         >
-          Case {n}
+          Cage {n}
         </button>
       ))}
     </div>

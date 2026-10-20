@@ -51,7 +51,7 @@ export default function TireCatalogSearch({
       <ul className="max-h-56 overflow-y-auto rounded-xl border border-border divide-y divide-border">
         {results.length === 0 ? (
           <li className="px-3 py-4 text-center text-xs text-muted-foreground">
-            {caseNo ? `No Case ${caseNo} tires found.` : "No matches."}
+            {caseNo ? `No Cage ${caseNo} tires found.` : "No matches."}
           </li>
         ) : (
           results.map((sku) => {

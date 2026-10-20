@@ -120,7 +120,7 @@ export default function PendingPutawayPanel({
     // A pallet of the other case is never put away from this view (pallets with
     // no case, saved before cases existed, can be placed under either).
     if (selected.caseNo && selected.caseNo !== caseNo) {
-      setError(`Pallet ${selected.palletNo} belongs to Case ${selected.caseNo}. Switch case to put it away.`);
+      setError(`Pallet ${selected.palletNo} belongs to Cage ${selected.caseNo}. Switch cage to put it away.`);
       return;
     }
     setBusy(true);
@@ -170,12 +170,12 @@ export default function PendingPutawayPanel({
           className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
         {!caseNo ? (
-          <p className="text-sm text-muted-foreground">Select Case 1 or Case 2 above to see its pending pallets.</p>
+          <p className="text-sm text-muted-foreground">Select Cage 1 or Cage 2 above to see its pending pallets.</p>
         ) : loading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : visible.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {pending.length === 0 ? `No Case ${caseNo} pallets waiting for putaway.` : "No pallets match your search."}
+            {pending.length === 0 ? `No Cage ${caseNo} pallets waiting for putaway.` : "No pallets match your search."}
           </p>
         ) : (
           <ul className="space-y-2 max-h-96 overflow-y-auto">

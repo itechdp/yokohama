@@ -12,7 +12,7 @@ function readStoredCase(): CaseNo | null {
   }
 }
 
-// The Case 1 / Case 2 the operator last picked, shared by Inward and Putaway
+// The Cage 1 / Cage 2 the operator last picked, shared by Inward and Putaway
 // through local storage (per device) so each page opens on the same case.
 // null until a case has been chosen once.
 // eslint-disable-next-line no-unused-vars

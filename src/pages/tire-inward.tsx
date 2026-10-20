@@ -64,7 +64,7 @@ function todayKey(): string {
 export default function TireInward() {
   const { user } = useAuth();
   const [tires, setTires] = useState<Tire[]>([]);
-  // Case 1 / Case 2: only that case's tires are offered, and what is saved is tagged with it.
+  // Cage 1 / Cage 2 (stored as case_no): only that cage's tires are offered, and what is saved is tagged with it.
   const [caseNo, setCaseNo] = useSelectedCase();
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
 
@@ -218,7 +218,7 @@ export default function TireInward() {
     setConfirmError(null);
     if (selectedTires.length === 0 || !selectedWarehouse) return;
     if (!caseNo) {
-      setConfirmError("Select Case 1 or Case 2 in step 1 first.");
+      setConfirmError("Select Cage 1 or Cage 2 in step 1 first.");
       return;
     }
     if (!allPalletNosFilled) {
@@ -259,7 +259,7 @@ export default function TireInward() {
     setConfirmError(null);
     setSuccess(null);
     if (!caseNo) {
-      setConfirmError("Select Case 1 or Case 2 in step 1 first.");
+      setConfirmError("Select Cage 1 or Cage 2 in step 1 first.");
       return;
     }
     if (!planNo.trim() || !shift) {
@@ -337,7 +337,7 @@ export default function TireInward() {
   const handleUploadImport = async (imported: { tires: SelectedTire[]; warehouse: WarehouseDef; bins: string[] }[]) => {
     setConfirmError(null);
     if (!caseNo) {
-      setConfirmError("Select Case 1 or Case 2 in step 1 before uploading.");
+      setConfirmError("Select Cage 1 or Cage 2 in step 1 before uploading.");
       return;
     }
     // Nothing from the other case may be inwarded under this one: refuse the
@@ -351,7 +351,7 @@ export default function TireInward() {
     );
     if (wrongCase.length > 0) {
       setConfirmError(
-        `Upload not imported: ${wrongCase.length} SKU${wrongCase.length === 1 ? " is" : "s are"} not in Case ${caseNo} (${wrongCase.slice(0, 5).join(", ")}${wrongCase.length > 5 ? ", …" : ""}). Switch case or fix the sheet.`,
+        `Upload not imported: ${wrongCase.length} SKU${wrongCase.length === 1 ? " is" : "s are"} not in Cage ${caseNo} (${wrongCase.slice(0, 5).join(", ")}${wrongCase.length > 5 ? ", …" : ""}). Switch cage or fix the sheet.`,
       );
       return;
     }
@@ -562,7 +562,7 @@ export default function TireInward() {
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
         <h2 className="text-base font-medium text-foreground">1. Plan details</h2>
         <div className="space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Case<RequiredMark /></span>
+          <span className="text-sm font-medium text-foreground">Cage<RequiredMark /></span>
           <CaseSelector value={caseNo} onChange={handleCaseChange} disabled={submitting} />
         </div>
         {/* Always one row: Driver Name, Sheet No, Shift. */}
@@ -608,7 +608,7 @@ export default function TireInward() {
           <TireCatalogSearch alreadySelected={selectedTires.map((t) => t.material)} onSelect={addTireFromCatalog} caseNo={caseNo} />
         ) : (
           <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
-            Select Case 1 or Case 2 in step 1 to see its tires.
+            Select Cage 1 or Cage 2 in step 1 to see its tires.
           </p>
         )}
 
@@ -921,7 +921,7 @@ export default function TireInward() {
       {scanningTire && (
         <QrScanner
           title="Scan tire QR"
-          notFoundLabel={caseNo ? `Case ${caseNo} tire` : "tire"}
+          notFoundLabel={caseNo ? `Cage ${caseNo} tire` : "tire"}
           onDecode={handleTireDecode}
           onClose={() => setScanningTire(false)}
         />

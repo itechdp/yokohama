@@ -34,7 +34,7 @@ export default function PendingPutaway() {
         </Link>
       </div>
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-1.5">
-        <span className="text-sm font-medium text-foreground">Case</span>
+        <span className="text-sm font-medium text-foreground">Cage</span>
         <CaseSelector value={caseNo} onChange={setCaseNo} />
       </div>
       <PendingPutawayPanel warehouses={warehouses} caseNo={caseNo} onPutAway={setSuccess} />
