@@ -71,6 +71,44 @@ export async function fetchTires(): Promise<Tire[]> {
   return (data ?? []).map(fromRow);
 }
 
+// Just the location column of every warehouse-stage tire. The Stock page
+// counts what each Row/Position holds from this — the locations alone are a
+// couple of MB where every tire's full row is tens of MB once a warehouse
+// holds tens of thousands of tyres, and that difference is what left those
+// counts reading "Empty" on a tablet when the big fetch was slow or failed.
+export async function fetchWarehouseStageLocations(): Promise<string[]> {
+  const { data, error } = await supabase.from("tires").select("location").eq("current_stage", "warehouse");
+  if (error) {
+    console.warn("tires warehouse locations fetch failed:", error.message);
+    return [];
+  }
+  return (data ?? []).map((row) => row.location as string);
+}
+
+// Escapes the LIKE wildcards in text we're matching literally, so a warehouse
+// label that happens to contain "_" or "%" can't turn into a pattern.
+function escapeLikeLiteral(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+// Warehouse-stage tires whose exact location starts with `locationPrefix`
+// ("<warehouse label> - Bin <code-prefix>") — one Row or one Position read
+// straight from the database instead of filtering the whole tires table
+// client-side. Reads only what that location holds.
+export async function fetchStockByLocationPrefix(locationPrefix: string): Promise<Tire[]> {
+  const { data, error } = await supabase
+    .from("tires")
+    .select("*")
+    .eq("current_stage", "warehouse")
+    .like("location", `${escapeLikeLiteral(locationPrefix)}*`)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.warn("tires location-prefix lookup failed:", error.message);
+    return [];
+  }
+  return (data ?? []).map(fromRow);
+}
+
 // Tires of one Material currently in stock at one exact location
 // ("<warehouse label> - Bin <code>") — what Outward takes out of stock.
 // Filtered in the database rather than from fetchTires(), so it stays exact

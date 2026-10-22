@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { AlertTriangle, Check, Download, Loader2, PackageSearch, Plus, Search, Trash2, Warehouse as WarehouseIcon, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Download, Loader2, PackageSearch, Plus, Search, Trash2, Warehouse as WarehouseIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ConfirmDialog from "@/components/confirm-dialog";
 import ExportMenu from "@/components/export-menu";
@@ -19,7 +19,7 @@ import {
 } from "@/lib/stock-export";
 import { addToStock, removeFromStock } from "@/lib/stock-adjust";
 import type { TireSkuRow } from "@/lib/supabase";
-import { deleteTiresInWarehouse, fetchTires } from "@/lib/tires";
+import { deleteTiresInWarehouse, fetchStockByLocationPrefix, fetchTires, fetchWarehouseStageLocations } from "@/lib/tires";
 import { fetchWarehouses } from "@/lib/warehouses";
 import type { Tire } from "@/types/tire";
 
@@ -41,9 +41,12 @@ async function fetchTiresAtLocation(warehouse: WarehouseDef, col: string, row: s
   const areaCode = allPositions
     ? `${warehouse.prefix}${String(Number(col)).padStart(2, "0")}-`
     : buildAreaCode(warehouse, Number(col), Number(row));
-  const allTires = await fetchTires();
-  return allTires.filter((t) => {
-    if (t.currentStage !== "warehouse") return false;
+  // Read just this Row/Position from the database by location prefix instead
+  // of pulling the whole tires table and filtering here — one warehouse can
+  // hold tens of thousands of tires, and loading them all per lookup is what
+  // made search (and these counts) unreliable on a tablet.
+  const rows = await fetchStockByLocationPrefix(locationForBin(warehouse, areaCode));
+  return rows.filter((t) => {
     const bin = binForLocation(warehouse, t.location);
     if (!bin) return false;
     // "All positions": every position of this Row.
@@ -61,12 +64,13 @@ function areaCodeOfBin(warehouse: WarehouseDef, bin: string): string | null {
 }
 
 // How many warehouse-stage tires each area code (col+row) in this warehouse
-// holds — shown next to each Row/Position dropdown entry.
-function stockByAreaCode(warehouse: WarehouseDef, tires: Tire[]): Map<string, number> {
+// holds — shown next to each Row/Position dropdown entry and in the
+// delete-by-position list. Counted from the lightweight location list, not
+// from full tire rows.
+function stockByAreaCode(warehouse: WarehouseDef, locations: string[]): Map<string, number> {
   const counts = new Map<string, number>();
-  for (const t of tires) {
-    if (t.currentStage !== "warehouse") continue;
-    const bin = binForLocation(warehouse, t.location);
+  for (const location of locations) {
+    const bin = binForLocation(warehouse, location);
     if (!bin) continue;
     const areaCode = areaCodeOfBin(warehouse, bin);
     if (areaCode) counts.set(areaCode, (counts.get(areaCode) ?? 0) + 1);
@@ -161,10 +165,12 @@ function buildGlobalExportRows(tires: Tire[], warehouses: WarehouseDef[]): Stock
 export default function TireStock() {
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
   const [loadingWarehouses, setLoadingWarehouses] = useState(true);
-  // Loaded once and reused to compute which Row/Position dropdown entries
-  // actually have stock — Search still fetches its own fresh copy below, so
-  // this only powers dropdown filtering and never the search results.
-  const [tires, setTires] = useState<Tire[]>([]);
+  // Where warehouse-stage stock sits — just the location strings. Powers the
+  // "N tyres" counts on the Row/Position dropdowns and the delete-by-position
+  // list. Deliberately not the full tire rows: at tens of thousands of tires
+  // those are tens of MB, and a slow/failed load left every position reading
+  // "Empty". Search reads its own scoped copy below.
+  const [stockLocations, setStockLocations] = useState<string[]>([]);
   const [loadingTires, setLoadingTires] = useState(true);
 
   const [warehouseKey, setWarehouseKey] = useState("");
@@ -189,6 +195,13 @@ export default function TireStock() {
   const [busySerial, setBusySerial] = useState<string | null>(null);
   const [adjustError, setAdjustError] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<StockGroup | null>(null);
+  // Positions (within the selected Row) ticked for the multi-position delete.
+  const [deletePositions, setDeletePositions] = useState<number[]>([]);
+  const [positionsDeleteOpen, setPositionsDeleteOpen] = useState(false);
+  const [positionsDeleteBusy, setPositionsDeleteBusy] = useState(false);
+  // The delete-by-position card stays collapsed to just its title until the
+  // operator taps it.
+  const [positionsExpanded, setPositionsExpanded] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addDraft, setAddDraft] = useState<AddDraft | null>(null);
   const [addQty, setAddQty] = useState(1);
@@ -206,9 +219,9 @@ export default function TireStock() {
         setLoadingWarehouses(false);
       })
       .catch(() => setLoadingWarehouses(false));
-    fetchTires()
-      .then((rows) => {
-        setTires(rows);
+    fetchWarehouseStageLocations()
+      .then((locations) => {
+        setStockLocations(locations);
         setLoadingTires(false);
       })
       .catch(() => setLoadingTires(false));
@@ -219,8 +232,8 @@ export default function TireStock() {
   // Every Row/Position the warehouse layout defines — empty ones too, so a
   // missing tire can be added anywhere — each labelled with what it holds.
   const areaCounts = useMemo(
-    () => (selectedWarehouse ? stockByAreaCode(selectedWarehouse, tires) : new Map<string, number>()),
-    [selectedWarehouse, tires],
+    () => (selectedWarehouse ? stockByAreaCode(selectedWarehouse, stockLocations) : new Map<string, number>()),
+    [selectedWarehouse, stockLocations],
   );
 
   const columnOptions = useMemo(() => {
@@ -249,6 +262,21 @@ export default function TireStock() {
     ];
   }, [selectedWarehouse, col, areaCounts]);
 
+  // Every position of the selected Row, with how many tyres it holds — the
+  // checkbox list the multi-position delete is driven from.
+  const positionChoices = useMemo(() => {
+    if (!selectedWarehouse || !col) return [];
+    const max = selectedWarehouse.columnRowCounts[Number(col) - 1] ?? 0;
+    return Array.from({ length: max }, (_, i) => ({
+      position: i + 1,
+      count: areaCounts.get(buildAreaCode(selectedWarehouse, Number(col), i + 1)) ?? 0,
+    }));
+  }, [selectedWarehouse, col, areaCounts]);
+
+  const selectedPositionsTotal = positionChoices
+    .filter((c) => deletePositions.includes(c.position))
+    .reduce((sum, c) => sum + c.count, 0);
+
   // Same raw matches the search already found (Warehouse + Row + Position,
   // untouched) — only grouped by Serial No. for display, one row per serial.
   const groupedResults = useMemo(
@@ -275,12 +303,14 @@ export default function TireStock() {
     setWarehouseKey(key);
     setCol("");
     setRow("");
+    setDeletePositions([]);
     clearResults();
   };
 
   const selectCol = (value: string) => {
     setCol(value);
     setRow("");
+    setDeletePositions([]);
     clearResults();
   };
 
@@ -326,12 +356,12 @@ export default function TireStock() {
   // Re-reads the searched location (and the dropdown counts) after a change.
   const refreshLocation = async () => {
     if (!searchedWarehouse || !searchedLocation) return;
-    const [matches, all] = await Promise.all([
+    const [matches, locations] = await Promise.all([
       fetchTiresAtLocation(searchedWarehouse, searchedLocation.col, searchedLocation.row),
-      fetchTires(),
+      fetchWarehouseStageLocations(),
     ]);
     setResults(matches);
-    setTires(all);
+    setStockLocations(locations);
   };
 
   // Sets how many of one tire sit at the searched location: fewer removes the
@@ -409,6 +439,48 @@ export default function TireStock() {
     setRowDeleteBusy(false);
   };
 
+  const toggleDeletePosition = (position: number) => {
+    setDeletePositions((prev) =>
+      prev.includes(position) ? prev.filter((p) => p !== position) : [...prev, position].sort((a, b) => a - b),
+    );
+  };
+
+  // Takes only the ticked positions of the selected Row out of stock — every
+  // other position, row and warehouse is left exactly as it was. Re-reads the
+  // Row first so what's removed is what's there now, not what the last render
+  // showed.
+  const handleDeleteSelectedPositions = async () => {
+    if (positionsDeleteBusy || !selectedWarehouse || !col || deletePositions.length === 0) return;
+    setPositionsDeleteBusy(true);
+    setAdjustError(null);
+    try {
+      // One read of the whole Row, then keep only the ticked positions — so
+      // nothing outside them can be touched.
+      const rowTires = await fetchTiresAtLocation(selectedWarehouse, col, ALL_POSITIONS);
+      const selectedAreaCodes = new Set(
+        deletePositions.map((position) => buildAreaCode(selectedWarehouse, Number(col), position)),
+      );
+      const targets = rowTires.filter((t) => {
+        const bin = binForLocation(selectedWarehouse, t.location);
+        const areaCode = bin ? areaCodeOfBin(selectedWarehouse, bin) : null;
+        return areaCode !== null && selectedAreaCodes.has(areaCode);
+      });
+      const { error: removeError } = await removeFromStock(targets);
+      if (removeError) {
+        setAdjustError(removeError);
+      } else {
+        setDeletePositions([]);
+      }
+    } finally {
+      setPositionsDeleteBusy(false);
+      if (searchedWarehouse && searchedLocation) {
+        await refreshLocation();
+      } else {
+        setStockLocations(await fetchWarehouseStageLocations());
+      }
+    }
+  };
+
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [deleteAllBusy, setDeleteAllBusy] = useState(false);
   const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
@@ -426,7 +498,7 @@ export default function TireStock() {
       return;
     }
     clearResults();
-    setTires(await fetchTires());
+    setStockLocations(await fetchWarehouseStageLocations());
   };
 
   const handleGlobalExport = async (format: "pdf" | "excel") => {
@@ -641,6 +713,89 @@ export default function TireStock() {
             )}
           </>
       </div>
+
+      {selectedWarehouse && col && (
+        <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setPositionsExpanded((v) => !v)}
+            aria-expanded={positionsExpanded}
+            className="flex w-full items-center gap-2 px-4 py-3.5 text-left transition-colors hover:bg-muted"
+          >
+            <Trash2 className="size-4 shrink-0 text-muted-foreground" />
+            <span className="text-base font-medium text-foreground">Delete tyres from positions</span>
+            <ChevronDown
+              className={cn(
+                "ml-auto size-4 shrink-0 text-muted-foreground transition-transform",
+                positionsExpanded && "rotate-180",
+              )}
+            />
+          </button>
+
+          {positionsExpanded && (
+            <div className="space-y-3 border-t border-border px-4 py-4">
+              <p className="text-xs text-muted-foreground">
+                {selectedWarehouse.label} · Row {String(col).padStart(2, "0")}. Tick the positions to clear — only the
+                ticked positions are affected.
+              </p>
+
+              {positionChoices.length === 0 ? (
+                <p className="text-sm text-muted-foreground">This row has no positions.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {positionChoices.map(({ position, count }) => {
+                    const checked = deletePositions.includes(position);
+                    const empty = count === 0;
+                    return (
+                      <li key={position}>
+                        <label
+                          className={cn(
+                            "flex items-center gap-3 rounded-xl border px-3 py-3 text-sm transition-colors",
+                            checked ? "border-danger-border bg-danger-soft" : "border-border bg-card",
+                            empty ? "opacity-50" : "cursor-pointer hover:bg-muted",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={empty || positionsDeleteBusy}
+                            onChange={() => toggleDeletePosition(position)}
+                            className="size-4 shrink-0 accent-danger"
+                          />
+                          <span className="font-medium text-foreground">Position {position}</span>
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {empty ? "Empty" : tyresLabel(count)}
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {deletePositions.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Selected:{" "}
+                  <span className="font-medium text-foreground">
+                    {deletePositions.map((p) => `Position ${p}`).join(", ")}
+                  </span>{" "}
+                  · {tyresLabel(selectedPositionsTotal)}
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setPositionsDeleteOpen(true)}
+                disabled={deletePositions.length === 0 || positionsDeleteBusy || busySerial !== null}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-danger-border px-4 py-3 text-sm font-medium text-danger hover:bg-danger-soft disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {positionsDeleteBusy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                Delete tyres from selected positions
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {searching && (
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
@@ -880,6 +1035,25 @@ export default function TireStock() {
           void handleDeleteRowTires();
         }}
         onCancel={() => setRowDeleteOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={positionsDeleteOpen}
+        title="Delete tyres from selected positions?"
+        message={
+          selectedWarehouse && col && deletePositions.length > 0
+            ? `All tyres in ${selectedWarehouse.label} → Row ${String(col).padStart(2, "0")} → ${deletePositions
+                .map((p) => `Position ${p}`)
+                .join(", ")} (${tyresLabel(selectedPositionsTotal)}) will be taken out of stock. Other positions, rows and warehouses are not affected.`
+            : ""
+        }
+        confirmLabel="Delete tyres"
+        destructive
+        onConfirm={() => {
+          setPositionsDeleteOpen(false);
+          void handleDeleteSelectedPositions();
+        }}
+        onCancel={() => setPositionsDeleteOpen(false)}
       />
 
       <ConfirmDialog
