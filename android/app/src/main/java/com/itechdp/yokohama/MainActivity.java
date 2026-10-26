@@ -12,6 +12,7 @@ import com.getcapacitor.WebViewListener;
 public class MainActivity extends BridgeActivity {
 
     private final KioskAdmin kioskAdmin = new KioskAdmin(this);
+    private final KioskStatusBar statusBar = new KioskStatusBar(this);
     private ConnectivityManager.NetworkCallback networkCallback;
     private volatile boolean loadFailed;
 
@@ -19,6 +20,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Kiosk.applyPolicies(this);
+        statusBar.attach();
         reloadWhenBackOnline();
     }
 
@@ -26,6 +28,13 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         Kiosk.enforce(this);
+        statusBar.start();
+    }
+
+    @Override
+    public void onPause() {
+        statusBar.stop();
+        super.onPause();
     }
 
     @Override

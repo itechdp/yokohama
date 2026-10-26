@@ -161,11 +161,25 @@ adb shell dumpsys activity activities | grep -E "mResumedActivity|mLockTaskModeS
 - Tell the user it's locked, plus the gesture and PIN.
 - Add a row to "Provisioned tablets" below.
 
+## Status strip
+
+A slim native bar at the top of the app (`KioskStatusBar.java`) shows Wi-Fi signal bars, network
+name and dBm ("no internet" when not validated, "off" / "not connected" otherwise), and battery
+percentage with charging / not charging / full. It updates live and works with no internet.
+The network name needs location permission, which `Kiosk.applyPolicies` pre-grants as device
+owner. The bars are drawn, not font glyphs: the Slate's font shows glyph bars as a solid block.
+
+Test it over ADB: `adb shell dumpsys battery set level 42` / `set status 3` (not charging) /
+`set status 5` (full), then `dumpsys battery reset`; `adb shell svc wifi disable` / `enable`.
+Wake the screen first (`input keyevent KEYCODE_WAKEUP`) or screenshots come out blank.
+
 ## Day-to-day use
 
 Admin menu: 7 quick taps in the top-left corner, then the PIN.
 
-- **Change Wi-Fi:** opens the Wi-Fi pop-up over the app and the lock stays on. Pick a network,
+- **Change Wi-Fi:** opens the Wi-Fi pop-up over the app and the lock stays on. Tapping a secured
+  network opens its password dialog and keyboard inside the lock (tested, wrong password shows
+  "Check password and try again"). The list reorders as scans finish, so check before tapping. Pick a network,
   tap Done, and YOKOHAMA comes back with Settings blocked again. As a safety net, Settings
   is closed after 3 minutes.
 - **Exit kiosk mode:** the lock is off, the normal launcher is back and the restrictions are
@@ -252,6 +266,7 @@ cd android && ./gradlew assembleRelease
 | `Kiosk.java` | All lock logic: device-owner check, applying/clearing policies (lock-task allowlist, launcher alias, restrictions, camera grant), start/stop, the Wi-Fi window, full removal. On/off state lives in SharedPreferences `kiosk` / `enabled` (default on) |
 | `KioskAdmin.java` | Hidden gesture, PIN dialog, admin menu. `ADMIN_PIN`, tap count, time window, corner size |
 | `MainActivity.java` | Applies policies on create, re-locks on every resume, passes touches to `KioskAdmin`, reloads the WebView once the network is VALIDATED after a failed load |
+| `KioskStatusBar.java` | Top strip: Wi-Fi signal/name, battery %, charging. Attached in `MainActivity.onCreate`, live while resumed |
 | `AdminReceiver.java` | The device-admin component that becomes device owner; applies policies when enabled |
 | `KioskRelaunchReceiver.java` | Reopens the app after an update (`MY_PACKAGE_REPLACED`), so the lock isn't dropped |
 | `KioskRemoveReceiver.java` | ADB-only `KIOSK_REMOVE` broadcast: clears everything and gives up device owner |
@@ -271,7 +286,12 @@ to the database but unused.
 - Opening or sharing exported files (PDF/Excel) in another app is probably blocked, because
   only YOKOHAMA may run. Not tested. If it's needed, add that app's package to
   `setLockTaskPackages` in `Kiosk.applyPolicies`.
-- The 3-minute auto-close of Settings after Change Wi-Fi is not tested end to end.
+- The 3-minute auto-close of Settings after Change Wi-Fi is not tested end to end. While the
+  Wi-Fi window is open, Settings can be started over ADB; the allowlist resets when the app resumes.
+- Connecting to a phone hotspot and a correct password were not tested (no hotspot or password
+  available). A hotspot is an ordinary secured network in the panel. "See more" (full Wi-Fi
+  list, needed for hidden networks) opens inside the lock, and its back arrow returns to the
+  app (tested on tablet #5, 2026-10-26).
 - The PIN is readable in the source code and the APK.
 - The release keystore and its passwords are committed to this repo
   (`android/keystore.properties`, `android/yokohama-release-key.jks`), so keep the repo
@@ -284,3 +304,10 @@ to the database but unused.
 | # | Date | Model | Android | Serial | Notes |
 |---|---|---|---|---|---|
 | 1 | 2026-10-18 | Slate | 10 (API 29) | 0123456789ABCDEF | Google account removed; Fully Single App Kiosk uninstalled; weak Wi-Fi where it was tested |
+| 2 | 2026-10-26 | Slate | 10 (API 29) | 0123456789ABCDEF | Provisioned from clean state (0 accounts, no device owner, app not installed). Steps 1-8 passed. No Wi-Fi at the time, so "Webpage not available" until Wi-Fi is set via the admin menu. Same serial as #1, possibly the same unit re-provisioned |
+| 3 | 2026-10-26 | Slate | 10 (API 29) | 0123456789ABCDEF | Second unit, same session; clean state (0 accounts, no device owner, app not installed). Steps 1-8 passed. Had internet at provisioning; app loaded the login page |
+| 4 | 2026-10-26 | Slate | 10 (API 29) | 0123456789ABCDEF | Third unit this session; clean state. Steps 1-8 passed. On Wi-Fi "SENTIMENT AI 5G". Screen timeout during a pause blanked the screenshot; `adb shell input keyevent KEYCODE_WAKEUP` before re-testing |
+| 5 | 2026-10-26 | Slate | 10 (API 29) | 0123456789ABCDEF | Behind a USB hub (also a LAN adapter). Already device owner with the old app; updated to the status-strip APK. Strip, battery states, Wi-Fi panel, password dialog, reconnect, Settings block, reboot all passed |
+| 6 | 2026-10-26 | Slate | 10 (API 29) | 0123456789ABCDEF | Another unit (Wi-Fi MAC 7a:0a:fa:39:73:5c), already device owner with an older app; updated to the status-strip APK. Same tests passed. Boots in landscape; strip fits |
+
+Tablets #4 and #5 were updated with the status-strip APK on 2026-10-26 (`adb install -r`). Other tablets need the same update. Through a USB hub, `adb devices -l` lists only Android devices; use `ioreg -p IOUSB -w0` to tell a tablet from other hub devices (e.g. a LAN adapter).

@@ -115,6 +115,9 @@ final class Kiosk {
         // Pre-grant the camera for the QR scanner so no permission dialog appears.
         dpm.setPermissionGrantState(admin, pkg, Manifest.permission.CAMERA,
             DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+        // Android only reveals the Wi-Fi network name to apps that hold location (status strip).
+        dpm.setPermissionGrantState(admin, pkg, Manifest.permission.ACCESS_FINE_LOCATION,
+            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
     }
 
     /** Undoes the lock but stays device owner, so kiosk mode can be started again. */
