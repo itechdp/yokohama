@@ -13,12 +13,15 @@ import android.net.NetworkCapabilities;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 /**
  * Slim native strip at the top of the app showing Wi-Fi signal, battery level and charging
@@ -31,7 +34,9 @@ final class KioskStatusBar {
     private static final int LEVELS = 5;
 
     private final Activity activity;
-    private TextView view;
+    private TextView wifiView;
+    private TextView detailView;
+    private TextView batteryView;
     private SignalBars bars;
 
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -64,7 +69,7 @@ final class KioskStatusBar {
 
         TextView label = new TextView(activity);
         label.setTextColor(Color.WHITE);
-        label.setTextSize(13);
+        label.setTextSize(12);
         label.setSingleLine(true);
         label.setText("Wi-Fi");
         strip.addView(label);
@@ -74,12 +79,41 @@ final class KioskStatusBar {
         barsParams.setMargins((int) (6 * density), 0, (int) (6 * density), 0);
         strip.addView(bars, barsParams);
 
-        view = new TextView(activity);
-        view.setTextColor(Color.WHITE);
-        view.setTextSize(13);
-        view.setSingleLine(true);
-        strip.addView(view);
+        // The network name gives way (ellipsis) so the battery text is never cut off.
+        wifiView = new TextView(activity);
+        wifiView.setTextColor(Color.WHITE);
+        wifiView.setTextSize(12);
+        wifiView.setSingleLine(true);
+        wifiView.setEllipsize(TextUtils.TruncateAt.END);
+        strip.addView(wifiView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        detailView = new TextView(activity);
+        detailView.setTextColor(Color.WHITE);
+        detailView.setTextSize(12);
+        detailView.setSingleLine(true);
+        detailView.setPadding((int) (4 * density), 0, 0, 0);
+        strip.addView(detailView);
+
+        batteryView = new TextView(activity);
+        batteryView.setTextColor(Color.WHITE);
+        batteryView.setTextSize(12);
+        batteryView.setSingleLine(true);
+        batteryView.setPadding((int) (8 * density), 0, 0, 0);
+        strip.addView(batteryView);
         content.addView(strip, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height, Gravity.TOP));
+
+        // Android 15+ draws apps edge to edge, under the system status bar. Capacitor already
+        // pushes the web view down by that inset, so only the strip must move below it.
+        ViewCompat.setOnApplyWindowInsetsListener(strip, (v, insets) -> {
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) v.getLayoutParams();
+            int top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+            if (params.topMargin != top) {
+                params.topMargin = top;
+                v.setLayoutParams(params);
+            }
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(strip);
     }
 
     void start() {
@@ -101,11 +135,13 @@ final class KioskStatusBar {
     }
 
     private void refresh() {
-        if (view == null) return;
-        view.setText(wifiText() + "     " + batteryText());
+        if (wifiView == null) return;
+        detailView.setText("");
+        wifiView.setText(wifiText());
+        batteryView.setText(batteryText());
     }
 
-    /** Sets the bars and returns the text that goes after them. */
+    /** Sets the bars and signal figure, and returns the network name (or state) to show after them. */
     private String wifiText() {
         bars.setLevel(-1);
         WifiManager wifi = activity.getApplicationContext().getSystemService(WifiManager.class);
@@ -121,7 +157,9 @@ final class KioskStatusBar {
         String ssid = info.getSSID() == null ? "" : info.getSSID().replace("\"", "");
         if (ssid.isEmpty() || ssid.equals(WifiManager.UNKNOWN_SSID)) ssid = "Wi-Fi";
         boolean online = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
-        return ssid + " (" + info.getRssi() + " dBm)" + (online ? "" : " – no internet");
+        // The name may be shortened with an ellipsis; the signal figure stays whole.
+        detailView.setText(info.getRssi() + " dBm" + (online ? "" : " – no internet"));
+        return ssid;
     }
 
     private String batteryText() {
@@ -133,7 +171,7 @@ final class KioskStatusBar {
         boolean charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
         int percent = level < 0 ? 0 : Math.round(level * 100f / scale);
         String state = status == BatteryManager.BATTERY_STATUS_FULL ? "full" : charging ? "charging" : "not charging";
-        return "Battery " + percent + "% (" + state + ")";
+        return "Battery " + percent + "% " + state;
     }
 
     /** Five rising bars; those up to the current level are lit. Drawn, because font glyphs vary per tablet. */

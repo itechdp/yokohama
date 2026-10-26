@@ -147,6 +147,26 @@ adb shell input text 3007
 2. Check the menu shows "Kiosk mode is ON" with Change Wi-Fi / Exit kiosk mode.
 3. Tap CLOSE.
 
+### 7b. Other-apps test (operators can only reach YOKOHAMA)
+
+Run after step 7 and again after the reboot. Every launch must fail with error 101 and
+`mResumedActivity` must stay YOKOHAMA (`mLockTaskModeState=LOCKED`):
+
+```bash
+for a in android.settings.SETTINGS android.settings.WIFI_SETTINGS android.settings.BLUETOOTH_SETTINGS \
+         android.settings.APPLICATION_SETTINGS android.intent.action.DIAL; do adb shell am start -a $a; done
+adb shell am start -n com.android.chrome/com.google.android.apps.chrome.Main
+adb shell am start -a android.intent.action.VIEW -d https://example.com
+adb shell monkey -p com.google.android.youtube -c android.intent.category.LAUNCHER 1   # any other installed app
+for k in HOME APP_SWITCH BACK MENU SEARCH ASSIST CAMERA CALL CONTACTS CALENDAR EXPLORER; do adb shell input keyevent KEYCODE_$k; done
+adb shell input keyevent --longpress KEYCODE_HOME
+adb shell input swipe 400 2 400 700 300      # status bar; also swipe from the right edge and the bottom
+```
+
+The power-menu long-press (Power off / Restart / Screenshot / Emergency) is allowed on purpose.
+The Emergency button opened nothing on the Slate (no dialer, lock held, tested tablet #7).
+Tablet #7 results: all of the above blocked, before and after reboot.
+
 ### 8. Reboot test
 
 ```bash
@@ -277,6 +297,33 @@ An earlier screen-pinning kiosk was removed in `50f339d`. Don't bring back `Kios
 `useKioskLock` or the Exit PIN. `supabase/migrations/exit_pin_setting.sql` is still applied
 to the database but unused.
 
+## Android 14+ notes (tested on vivo V2556, Android 16)
+
+- **Wi-Fi:** the small Wi-Fi panel lists networks but tapping a secured one does nothing under the
+  lock, so `Kiosk.openWifi` opens the full Wi-Fi settings screen on Android 14+. Password page,
+  keyboard and Join work. The window also allows the Wi-Fi dialog packages and the keyboard.
+  Android 10-13 still use the panel (verified on Android 10).
+- **Re-lock timer:** each "Change Wi-Fi" used to start its own 3-minute timer, so an older one could
+  close a newer Wi-Fi window mid-password. Only the newest timer runs now.
+- **Status strip:** Android 15+ draws edge to edge, so the strip is moved below the system status
+  bar by the inset (`KioskStatusBar`). The 7-tap corner gesture: the top ~73 px is the system
+  status bar and swallows taps, so tap lower in the corner (e.g. y=110 on a 720x1600 screen).
+- **Screenshots:** `adb exec-out screencap` fails on secure pages (PIN dialog, password page).
+  Use `adb shell uiautomator dump` and read the text/bounds instead.
+- **Lock screen:** after the screen sleeps the normal swipe-up lock screen returns (no PIN set).
+  Its phone shortcut and notifications open nothing under the lock. For testing, keep the display
+  on with `adb shell svc power stayon usb`, then restore with `svc power stayon false`.
+- **Power menu:** the power-button long-press showed no menu on these phones.
+- **Other apps:** Chrome, Play Store, Gmail, Maps, Photos, Messages, Contacts/dialer, camera and
+  web links are all refused (error 101), before and after reboot.
+- **Cleaning up Wi-Fi test entries:** a wrong-password attempt leaves a saved entry for that
+  network. `adb shell cmd wifi list-networks` lists IDs; read the SSID next to the ID *before*
+  `cmd wifi forget-network <id>`. IDs are not in saved order, and forgetting the wrong one
+  deletes the real Wi-Fi password.
+- **Status strip text:** the network name shortens with an ellipsis first; signal (dBm) and
+  battery text always stay whole (12 sp, tested at 720 px width with "100% not charging").
+- **USB hub:** the hub drops devices briefly; re-run `adb devices -l` and use `adb -s <serial>`.
+
 ## Limits
 
 - Factory reset from recovery mode (hardware buttons) can't be blocked on Android 10. It
@@ -309,5 +356,9 @@ to the database but unused.
 | 4 | 2026-10-26 | Slate | 10 (API 29) | 0123456789ABCDEF | Third unit this session; clean state. Steps 1-8 passed. On Wi-Fi "SENTIMENT AI 5G". Screen timeout during a pause blanked the screenshot; `adb shell input keyevent KEYCODE_WAKEUP` before re-testing |
 | 5 | 2026-10-26 | Slate | 10 (API 29) | 0123456789ABCDEF | Behind a USB hub (also a LAN adapter). Already device owner with the old app; updated to the status-strip APK. Strip, battery states, Wi-Fi panel, password dialog, reconnect, Settings block, reboot all passed |
 | 6 | 2026-10-26 | Slate | 10 (API 29) | 0123456789ABCDEF | Another unit (Wi-Fi MAC 7a:0a:fa:39:73:5c), already device owner with an older app; updated to the status-strip APK. Same tests passed. Boots in landscape; strip fits |
+| 7 | 2026-10-26 | Slate | 10 (API 29) | 0123456789ABCDEF | Clean unit (Wi-Fi MAC ce:d7:3f:7e:77:06), behind a hub. Full runbook plus the "other apps" test below passed |
+| 8 | 2026-10-26 | vivo V2556 | 16 (API 36) | 10BG7A1LH2003GH | Distinct serial (use `adb -s`). Clean; set up in a hub next to #9. All runbook steps, other-apps test, status strip, Wi-Fi flow (password, wrong-key rejected) and reboot passed. No Wi-Fi saved yet |
+| 9 | 2026-10-26 | vivo V2556 | 16 (API 36) | 10BG7B16TK003GL | Same as #8 |
+| 10 | 2026-10-26 | vivo V2556 | 16 (API 36) | 10BG6616G1002HB | Clean unit. All steps, other-apps test, Wi-Fi flow (wrong key rejected) and reboot passed. **Its saved office Wi-Fi (SENTIMENT AI 5G) was forgotten by mistake while cleaning up a test entry; re-enter that password via Change Wi-Fi.** A saved "OnePlus Nord CE3 5G" hotspot was not in range, so hotspot connect is still untested |
 
 Tablets #4 and #5 were updated with the status-strip APK on 2026-10-26 (`adb install -r`). Other tablets need the same update. Through a USB hub, `adb devices -l` lists only Android devices; use `ioreg -p IOUSB -w0` to tell a tablet from other hub devices (e.g. a LAN adapter).

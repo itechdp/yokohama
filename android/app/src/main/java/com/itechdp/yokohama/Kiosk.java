@@ -16,6 +16,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.UserManager;
 import android.provider.Settings;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * Kiosk mode: once this app is the device owner (set once over ADB), the tablet is
@@ -31,11 +34,25 @@ final class Kiosk {
     /** How long Settings stays reachable after "Change Wi-Fi" before the lock closes it. */
     private static final long WIFI_WINDOW_MS = 3 * 60 * 1000;
 
+    /**
+     * Packages that host the Wi-Fi password dialog on newer Android (mainline Wi-Fi module).
+     * Allowed together with Settings during the Wi-Fi window, or tapping a secured network
+     * silently does nothing. Not-installed packages are harmless.
+     */
+    private static final String[] WIFI_DIALOG_PACKAGES = {
+        "com.google.android.wifi.dialog",
+        "com.android.wifi.dialog",
+        "com.android.wifi.dialogex",
+    };
+
     private static final String[] RESTRICTIONS = {
         UserManager.DISALLOW_SAFE_BOOT,
         UserManager.DISALLOW_FACTORY_RESET,
         UserManager.DISALLOW_ADD_USER,
     };
+
+    private static final Handler WIFI_WINDOW_HANDLER = new Handler(Looper.getMainLooper());
+    private static Runnable relockAfterWifi = () -> {};
 
     private Kiosk() {}
 
@@ -69,9 +86,14 @@ final class Kiosk {
         clearPolicies(activity);
     }
 
-    /** Opens the Wi-Fi panel inside kiosk mode by briefly allowing the Settings app. */
+    /**
+     * Opens Wi-Fi inside kiosk mode by briefly allowing the Settings app. Android 10-13 get the
+     * small Wi-Fi panel. From Android 14 (tested: Android 16, vivo) tapping a secured network in
+     * the panel does nothing under the lock, so the full Wi-Fi settings screen is used instead.
+     */
     static void openWifi(Activity activity) {
         Intent wifi = new Intent(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE
             ? Settings.Panel.ACTION_WIFI
             : Settings.ACTION_WIFI_SETTINGS);
         ResolveInfo target = activity.getPackageManager().resolveActivity(wifi, 0);
@@ -79,16 +101,30 @@ final class Kiosk {
 
         if (isEnabled(activity)) {
             DevicePolicyManager dpm = activity.getSystemService(DevicePolicyManager.class);
-            dpm.setLockTaskPackages(admin(activity),
-                new String[] { activity.getPackageName(), target.activityInfo.packageName });
+            dpm.setLockTaskPackages(admin(activity), wifiWindowPackages(activity, target.activityInfo.packageName));
 
-            // If the admin walks away with Settings open, lock it again anyway.
+            // If the admin walks away with Settings open, lock it again anyway. Only the newest
+            // timer may run, or an older one would close this window while a password is typed.
             Context app = activity.getApplicationContext();
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            WIFI_WINDOW_HANDLER.removeCallbacks(relockAfterWifi);
+            relockAfterWifi = () -> {
                 if (isEnabled(app)) dpm.setLockTaskPackages(admin(app), new String[] { app.getPackageName() });
-            }, WIFI_WINDOW_MS);
+            };
+            WIFI_WINDOW_HANDLER.postDelayed(relockAfterWifi, WIFI_WINDOW_MS);
         }
         activity.startActivity(wifi);
+    }
+
+    /** This app, Settings, the Wi-Fi dialog host(s) and the keyboard, for typing the password. */
+    private static String[] wifiWindowPackages(Context context, String settingsPackage) {
+        Set<String> packages = new LinkedHashSet<>();
+        packages.add(context.getPackageName());
+        packages.add(settingsPackage);
+        packages.addAll(Arrays.asList(WIFI_DIALOG_PACKAGES));
+        String ime = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
+        ComponentName imeComponent = ime == null ? null : ComponentName.unflattenFromString(ime);
+        if (imeComponent != null) packages.add(imeComponent.getPackageName());
+        return packages.toArray(new String[0]);
     }
 
     static void applyPolicies(Context context) {
