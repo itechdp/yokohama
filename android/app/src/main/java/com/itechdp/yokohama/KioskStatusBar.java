@@ -12,7 +12,11 @@ import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
+import android.database.ContentObserver;
 import android.os.BatteryManager;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -36,6 +40,7 @@ final class KioskStatusBar {
     private final Activity activity;
     private TextView wifiView;
     private TextView detailView;
+    private TextView mobileView;
     private TextView batteryView;
     private SignalBars bars;
 
@@ -43,6 +48,13 @@ final class KioskStatusBar {
         @Override
         public void onReceive(Context context, Intent intent) {
             refresh();
+        }
+    };
+
+    private final ContentObserver dataObserver = new ContentObserver(new Handler(Looper.getMainLooper())) {
+        @Override
+        public void onChange(boolean selfChange) {
+            refreshMobile();
         }
     };
 
@@ -94,6 +106,13 @@ final class KioskStatusBar {
         detailView.setPadding((int) (4 * density), 0, 0, 0);
         strip.addView(detailView);
 
+        mobileView = new TextView(activity);
+        mobileView.setTextSize(12);
+        mobileView.setSingleLine(true);
+        mobileView.setTypeface(null, android.graphics.Typeface.BOLD);
+        mobileView.setPadding((int) (8 * density), 0, 0, 0);
+        strip.addView(mobileView);
+
         batteryView = new TextView(activity);
         batteryView.setTextColor(Color.WHITE);
         batteryView.setTextSize(12);
@@ -123,6 +142,8 @@ final class KioskStatusBar {
         filter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
         filter.addAction(WifiManager.WIFI_STATE_CHANGED_ACTION);
         activity.registerReceiver(receiver, filter);
+        // The mobile data switch has no broadcast; its settings rows change instead (one per SIM).
+        activity.getContentResolver().registerContentObserver(Settings.Global.CONTENT_URI, true, dataObserver);
         refresh();
     }
 
@@ -132,6 +153,7 @@ final class KioskStatusBar {
         } catch (IllegalArgumentException ignored) {
             // Not registered.
         }
+        activity.getContentResolver().unregisterContentObserver(dataObserver);
     }
 
     private void refresh() {
@@ -139,6 +161,15 @@ final class KioskStatusBar {
         detailView.setText("");
         wifiView.setText(wifiText());
         batteryView.setText(batteryText());
+        refreshMobile();
+    }
+
+    private void refreshMobile() {
+        if (mobileView == null) return;
+        MobileData.State state = MobileData.read(activity);
+        mobileView.setText(state.bar);
+        mobileView.setTextColor(Color.parseColor(state.level == MobileData.Level.ON ? "#34D399"
+            : state.level == MobileData.Level.OFF ? "#F87171" : "#FBBF24"));
     }
 
     /** Sets the bars and signal figure, and returns the network name (or state) to show after them. */

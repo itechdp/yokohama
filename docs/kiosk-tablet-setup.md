@@ -13,7 +13,7 @@ Code: `android/app/src/main/java/com/itechdp/yokohama/` (`Kiosk*.java`, `AdminRe
 |---|---|
 | App package | `com.itechdp.yokohama` |
 | Device-owner component | `com.itechdp.yokohama/.AdminReceiver` |
-| Admin menu | 7 quick taps in the top-left corner (100 dp square, within 3 s), then the PIN |
+| Admin menu | 7 quick taps in the top-left corner (120 dp square, any 7 within 3 s), then the PIN. Tap just below the system status bar (see "7-tap gesture") |
 | Admin PIN | `3007` (`ADMIN_PIN` in `KioskAdmin.java`) |
 | APK | `android/app/build/outputs/apk/release/app-release.apk` |
 | Release cert SHA-256 | `403d594d4ed2b6dfb81bf1beeee4cc759f7ba76d620c4e4cdd0480b7b9972b05` |
@@ -144,7 +144,7 @@ adb shell input text 3007
    moves focus to Cancel.
    - The tablet rotates, so the position changes. On the Slate (800x1280), OK was at about
      (639, 455-479) in portrait and (911, 239) in landscape.
-2. Check the menu shows "Kiosk mode is ON" with Change Wi-Fi / Exit kiosk mode.
+2. Check the menu shows "Kiosk mode is ON" with Change Wi-Fi / Mobile Data / Exit kiosk mode.
 3. Tap CLOSE.
 
 ### 7b. Other-apps test (operators can only reach YOKOHAMA)
@@ -181,6 +181,18 @@ adb shell dumpsys activity activities | grep -E "mResumedActivity|mLockTaskModeS
 - Tell the user it's locked, plus the gesture and PIN.
 - Add a row to "Provisioned tablets" below.
 
+## 7-tap gesture
+
+`KioskAdmin.onTouch`: the PIN screen opens when any 7 taps in the 120 dp top-left square fall
+inside 3 seconds. The window slides (a slow tap no longer restarts the count), taps elsewhere are
+ignored rather than resetting it, and a second PIN dialog can't stack. 6 taps, 7 taps spread over
+more than 3 s, and taps outside the square do nothing.
+
+**Dead zone:** the system status bar is a real window drawn over the app (Slate: top 32 px;
+vivo: ~73 px) and swallows taps there before the app sees them. `setStatusBarDisabled` does not
+remove it (tested on the Slate). Tap just under it, where the status strip starts. Tested on the
+Slate: 7 taps at 0.15, 0.3, 0.4 and 0.45 s spacing all open it; (3,3) inside the dead zone never does.
+
 ## Status strip
 
 A slim native bar at the top of the app (`KioskStatusBar.java`) shows Wi-Fi signal bars, network
@@ -202,6 +214,16 @@ Admin menu: 7 quick taps in the top-left corner, then the PIN.
   "Check password and try again"). The list reorders as scans finish, so check before tapping. Pick a network,
   tap Done, and YOKOHAMA comes back with Settings blocked again. As a safety net, Settings
   is closed after 3 minutes.
+- **Mobile Data:** the admin menu row and the status strip (green ON / red OFF / amber "?" /
+  "no SIM") show the real SIM data switch, read per SIM from the telephony stack
+  (`MobileData.java`, needs `READ_PHONE_STATE`, which the device owner grants itself). Dual-SIM
+  shows each SIM and which one carries data. The state is never guessed: unreadable shows "?".
+  The menu re-reads it on every open and the strip updates live. Android lets no app, even a
+  device owner, change the switch (tested on Android 10: `setDataEnabled`, `WRITE_SECURE_SETTINGS`
+  and `setGlobalSetting` are all refused), so tapping the row opens the system Internet panel in
+  the temporary Settings window (3-minute re-lock). Flip "Mobile data" there, tap Done.
+  Tested on tablet #11 (Slate, Android 10, Jio SIM in slot 1): OFF/ON via the panel and via
+  `svc data`, strip and menu follow, lock and restrictions restored. Dual-SIM and the Vivo are not tested yet.
 - **Exit kiosk mode:** the lock is off, the normal launcher is back and the restrictions are
   lifted. The app stays device owner.
 - **Start kiosk mode:** open YOKOHAMA, then admin menu → Start kiosk mode.

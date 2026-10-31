@@ -79,6 +79,8 @@
     <!-- Wi-Fi signal strength and network name in the kiosk status strip. The name needs location (pre-granted). -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Reads the real SIM mobile data state for the status strip and admin menu (pre-granted). -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <!-- Camera access for the warehouse QR scanner (getUserMedia in the WebView). -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />

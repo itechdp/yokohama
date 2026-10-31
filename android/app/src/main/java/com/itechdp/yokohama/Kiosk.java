@@ -96,8 +96,29 @@ final class Kiosk {
                 && Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE
             ? Settings.Panel.ACTION_WIFI
             : Settings.ACTION_WIFI_SETTINGS);
+        openSettingsWindow(activity, wifi);
+    }
+
+    /**
+     * Android gives no app (not even a device owner) a way to flip mobile data itself, so this opens
+     * the system's own mobile data screen inside the same temporary Settings window as Wi-Fi.
+     * Android 10-13 get the small internet panel (has the Mobile data switch); newer versions get
+     * the full Network & internet screen. Returns false when the tablet has no such screen.
+     */
+    static boolean openMobileData(Activity activity) {
+        Intent data = new Intent(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+            ? Settings.Panel.ACTION_INTERNET_CONNECTIVITY
+            : Settings.ACTION_DATA_ROAMING_SETTINGS);
+        if (activity.getPackageManager().resolveActivity(data, 0) == null) {
+            data = new Intent(Settings.ACTION_WIRELESS_SETTINGS);
+        }
+        return openSettingsWindow(activity, data);
+    }
+
+    private static boolean openSettingsWindow(Activity activity, Intent wifi) {
         ResolveInfo target = activity.getPackageManager().resolveActivity(wifi, 0);
-        if (target == null) return;
+        if (target == null) return false;
 
         if (isEnabled(activity)) {
             DevicePolicyManager dpm = activity.getSystemService(DevicePolicyManager.class);
@@ -113,6 +134,7 @@ final class Kiosk {
             WIFI_WINDOW_HANDLER.postDelayed(relockAfterWifi, WIFI_WINDOW_MS);
         }
         activity.startActivity(wifi);
+        return true;
     }
 
     /** This app, Settings, the Wi-Fi dialog host(s) and the keyboard, for typing the password. */
@@ -153,6 +175,9 @@ final class Kiosk {
             DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
         // Android only reveals the Wi-Fi network name to apps that hold location (status strip).
         dpm.setPermissionGrantState(admin, pkg, Manifest.permission.ACCESS_FINE_LOCATION,
+            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+        // Needed to read the real SIM mobile data state (MobileData).
+        dpm.setPermissionGrantState(admin, pkg, Manifest.permission.READ_PHONE_STATE,
             DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
     }
 
