@@ -13,7 +13,7 @@ Code: `android/app/src/main/java/com/itechdp/yokohama/` (`Kiosk*.java`, `AdminRe
 |---|---|
 | App package | `com.itechdp.yokohama` |
 | Device-owner component | `com.itechdp.yokohama/.AdminReceiver` |
-| Admin menu | 7 quick taps in the top-left corner (120 dp square, any 7 within 3 s), then the PIN. Tap just below the system status bar (see "7-tap gesture") |
+| Admin menu | 7 quick taps in the top-left corner (120 dp square, any 7 within 4 s), then the PIN. Tap just below the system status bar (see "7-tap gesture") |
 | Admin PIN | `3007` (`ADMIN_PIN` in `KioskAdmin.java`) |
 | APK | `android/app/build/outputs/apk/release/app-release.apk` |
 | Release cert SHA-256 | `403d594d4ed2b6dfb81bf1beeee4cc759f7ba76d620c4e4cdd0480b7b9972b05` |
@@ -131,7 +131,7 @@ adb shell dumpsys activity activities | grep mResumedActivity      # still YOKOH
 
 ### 7. Test the admin menu
 
-One `input tap` takes about 0.7 s, so seven in a row take longer than the 3 s window. Send
+One `input tap` takes about 0.7 s, so seven in a row take longer than the 4 s window. Send
 them in parallel instead:
 
 ```bash
@@ -184,14 +184,17 @@ adb shell dumpsys activity activities | grep -E "mResumedActivity|mLockTaskModeS
 ## 7-tap gesture
 
 `KioskAdmin.onTouch`: the PIN screen opens when any 7 taps in the 120 dp top-left square fall
-inside 3 seconds. The window slides (a slow tap no longer restarts the count), taps elsewhere are
+inside 4 seconds. The window slides (a slow tap no longer restarts the count), taps elsewhere are
 ignored rather than resetting it, and a second PIN dialog can't stack. 6 taps, 7 taps spread over
-more than 3 s, and taps outside the square do nothing.
+more than 4 s, and taps outside the square do nothing. The window was widened from 3 s to 4 s: a
+human tapping deliberately (7 taps at ~0.5 s each) could exceed 3 s and the PIN would never open.
 
 **Dead zone:** the system status bar is a real window drawn over the app (Slate: top 32 px;
 vivo: ~73 px) and swallows taps there before the app sees them. `setStatusBarDisabled` does not
 remove it (tested on the Slate). Tap just under it, where the status strip starts. Tested on the
 Slate: 7 taps at 0.15, 0.3, 0.4 and 0.45 s spacing all open it; (3,3) inside the dead zone never does.
+Note the vivo reports `mTopGestureHost=StatusBar`, so the top ~73 px belongs to SystemUI: taps there
+never reach the app. Tap on the app's own strip (about y=110) to stay inside the gesture area.
 
 ## Status strip
 
@@ -220,10 +223,16 @@ Admin menu: 7 quick taps in the top-left corner, then the PIN.
   shows each SIM and which one carries data. The state is never guessed: unreadable shows "?".
   The menu re-reads it on every open and the strip updates live. Android lets no app, even a
   device owner, change the switch (tested on Android 10: `setDataEnabled`, `WRITE_SECURE_SETTINGS`
-  and `setGlobalSetting` are all refused), so tapping the row opens the system Internet panel in
-  the temporary Settings window (3-minute re-lock). Flip "Mobile data" there, tap Done.
-  Tested on tablet #11 (Slate, Android 10, Jio SIM in slot 1): OFF/ON via the panel and via
-  `svc data`, strip and menu follow, lock and restrictions restored. Dual-SIM and the Vivo are not tested yet.
+  and `setGlobalSetting` are all refused), so tapping the row opens the system's Mobile network
+  screen in the temporary Settings window (3-minute re-lock). Flip the data switch there, tap Back.
+  "No SIM" comes from the modem (`getSimState`), never from an empty subscription list: right after
+  the switch is flipped off, some OEMs publish no active subscription for a moment, and reporting
+  "no SIM" there used to hide the SIM and block the screen needed to turn data back on (fixed after a
+  vivo report, see the Android 14+ notes). The row and the strip stay usable through the whole
+  ON → OFF → ON cycle.
+  Tested on a Slate (Android 10, Jio SIM in slot 1), tablet #11 and tablet #13 (Airtel SIM): OFF/ON
+  via the panel and via `svc data`, strip and menu follow, lock and restrictions restored. Dual-SIM
+  still not tested.
 - **Exit kiosk mode:** the lock is off, the normal launcher is back and the restrictions are
   lifted. The app stays device owner.
 - **Start kiosk mode:** open YOKOHAMA, then admin menu → Start kiosk mode.
@@ -298,6 +307,8 @@ cd android && ./gradlew assembleRelease
 | PIN dialog doesn't appear when testing over ADB | Taps too slow | Parallel taps (step 7) |
 | Home key ignored for a few seconds | Happens right after `am force-stop` | Avoid force-stop; use `adb shell am start -a android.intent.action.MAIN -c android.intent.category.HOME` |
 | "Webpage not available" | No internet | Admin menu → Change Wi-Fi; the app reloads by itself once online |
+| "Webpage not available" / `ERR_INTERNET_DISCONNECTED` with a SIM in and "Mobile data ON" | The strip shows only the switch. If `dumpsys telephony.registry` shows `OUT_OF_SERVICE` and `adb shell ping 8.8.8.8` says "Network is unreachable", the SIM has no network (no coverage, not activated, wrong seat). Kiosk is not the cause | Test the SIM in a phone at the same spot; use Wi-Fi or another SIM |
+| Mobile Data row shows "No SIM card inserted" after turning data off, or the opened screen has no data switch / no SIM | Old code read "no SIM" from an empty subscription list and opened the wrong screen (see Android 14+ notes) | Rebuild and `adb install -r`: the row now uses `getSimState` and opens the OEM Mobile network page |
 | Tablet doesn't rejoin Wi-Fi by itself | Weak signal (tablet #1: -83 to -86 dBm) | Rejoin via Change Wi-Fi; move it nearer the router |
 | Two tablets with the same serial | Cheap tablets share `0123456789ABCDEF` | Connect one at a time, or use `adb -t <transport_id>` from `adb devices -l` |
 
@@ -325,6 +336,28 @@ to the database but unused.
   lock, so `Kiosk.openWifi` opens the full Wi-Fi settings screen on Android 14+. Password page,
   keyboard and Join work. The window also allows the Wi-Fi dialog packages and the keyboard.
   Android 10-13 still use the panel (verified on Android 10).
+- **Mobile Data with a SIM (vivo report, fixed):** turning Mobile Data off and back on used to lose
+  the SIM — the row showed "No SIM card inserted" and there was no switch to turn data back on
+  without a reboot. Two causes. (1) `MobileData` treated the empty subscription list the OEM briefly
+  publishes while the switch flips as "no SIM"; it now asks the modem (`getSimState`) and shows "?"
+  instead of hiding the SIM. (2) the row opened `ACTION_DATA_ROAMING_SETTINGS`, which on vivo
+  resolves to `Settings$MobileNetworkActivity` — a SIM page with **no** mobile data switch, so data
+  could not actually be toggled there; the OEM "Mobile network" page
+  (`com.android.phone/.MobileNetworkSettings`) answers the same action at a lower priority and has
+  both the SIM and the switch, so the row now targets it directly, falling back to the internet
+  panel then the full settings screens. Verified 2026-11-01 on vivo V2556 unit `10BG7B16TK003GL`
+  (Android 16, Airtel SIM in slot 2): the row opens the page showing "SIM 2" and "Data network",
+  which toggles ON → OFF → ON repeatedly with no reboot while the SIM stays listed; the strip and
+  the admin menu row follow and never show "no SIM". The 3-minute window allowlist now also covers
+  `com.android.phone` while that page is open (the same auto re-lock applies).
+- **A SIM switched off by hand used to look lost (second vivo, `10BG7A1LH2003GH`, 2026-11-01):** the
+  row showed "No SIM" with a card inserted because the SIM itself was disabled — "Enable the SIM
+  card" off (`simSlotIndex=-1`, `areUiccApplicationsEnabled=0`, `mSimState=NOT_READY`), which the
+  page shows as "SIM settings … Off". The old Mobile Data screen carried a SIM on/off switch ("Use
+  this SIM") but no data switch, so disabling the SIM by mistake was easy. Turning "Enable the SIM
+  card" back on restores it (`mSimState=LOADED`, SIM active) and the app reads and toggles data
+  normally again. The row now opens the page with the real "Data network" switch, so the SIM on/off
+  control is no longer mistaken for mobile data.
 - **Re-lock timer:** each "Change Wi-Fi" used to start its own 3-minute timer, so an older one could
   close a newer Wi-Fi window mid-password. Only the newest timer runs now.
 - **Status strip:** Android 15+ draws edge to edge, so the strip is moved below the system status
@@ -344,6 +377,13 @@ to the database but unused.
   deletes the real Wi-Fi password.
 - **Status strip text:** the network name shortens with an ellipsis first; signal (dBm) and
   battery text always stay whole (12 sp, tested at 720 px width with "100% not charging").
+- **vivo V2556 retest, 2026-10-31 (unit 10BG6616G1002HB, no SIM):** updated with `install -r`; lock,
+  restrictions, other-apps block, edge/side-panel/status-bar swipes and reboot all pass. Status bar
+  inset is 75 px, so tap at y=110 to 200 (corner is 225 px at density 300); 7 taps opened the PIN
+  in 20/20 runs at 0.15 to 0.55 s spacing, and 6 taps, the status-bar zone and taps outside the
+  corner never do. **Earlier I wrote that the gesture was ignored after an install or reboot; that was a test mistake.** The vivo's screen was asleep or on its swipe-up lock screen, so the taps hit nothing. Before testing over ADB, check `dumpsys power | grep mWakefulness` (must be Awake) and `dumpsys window | grep isKeyguardShowing` (must be false). `svc power stayon usb` alone did not keep it awake; a slow, long swipe (`input swipe 360 1500 360 300 600`) unlocks it, a quick one does not. With the screen awake the gesture passed straight after an install and after a reboot. Change Wi-Fi opens `VivoWifiSettingsActivity` full screen and Back returns
+  locked. The Mobile Data row does nothing visible with no SIM (`Settings$MobileNetworkActivity`
+  resolves but closes itself within ~15 ms because there is no SIM; the row now shows a "No SIM card inserted" message instead). Not yet tested with a SIM on a vivo.
 - **USB hub:** the hub drops devices briefly; re-run `adb devices -l` and use `adb -s <serial>`.
 
 ## Limits
@@ -382,5 +422,9 @@ to the database but unused.
 | 8 | 2026-10-26 | vivo V2556 | 16 (API 36) | 10BG7A1LH2003GH | Distinct serial (use `adb -s`). Clean; set up in a hub next to #9. All runbook steps, other-apps test, status strip, Wi-Fi flow (password, wrong-key rejected) and reboot passed. No Wi-Fi saved yet |
 | 9 | 2026-10-26 | vivo V2556 | 16 (API 36) | 10BG7B16TK003GL | Same as #8 |
 | 10 | 2026-10-26 | vivo V2556 | 16 (API 36) | 10BG6616G1002HB | Clean unit. All steps, other-apps test, Wi-Fi flow (wrong key rejected) and reboot passed. **Its saved office Wi-Fi (SENTIMENT AI 5G) was forgotten by mistake while cleaning up a test entry; re-enter that password via Change Wi-Fi.** A saved "OnePlus Nord CE3 5G" hotspot was not in range, so hotspot connect is still untested |
+| 11 | 2026-10-31 | Slate | 10 (API 29) | 0123456789ABCDEF | Already device owner with the 2026-10-26 app (0 accounts, 1 user); updated with `install -r` to the APK with the Mobile Data strip and sliding 7-tap. Airtel SIM in slot 1 (loaded a minute after first check, strip went "no SIM" to ON live). Passed: lock, restrictions, 7-tap (5/5), wrong PIN, menu, Change Wi-Fi panel and return, Mobile Data OFF/ON via the Settings panel (strip and menu followed), other-apps block, reboot. Joining a Wi-Fi network was not tested (no password available) |
+| 12 | 2026-10-31 | Slate | 10 (API 29) | 0123456789ABCDEF | Android ID 14859df9054b157e, no SIM, 0 accounts. Already device owner with the 2026-10-26 app; updated with `install -r`. Passed: lock, restrictions, 7-tap (5/5; 6 taps and wrong PIN rejected), menu, Change Wi-Fi panel and return, Mobile Data row (strip and menu "no SIM", panel opens and returns locked; no switch to flip without a SIM), other-apps block, reboot. Wi-Fi join not tested (no password); app shows "Webpage not available" until Wi-Fi is set |
+| 13 | 2026-10-31 | Slate | 10 (API 29) | 0123456789ABCDEF | Android ID 443e4bba480f4f47, Airtel SIM with working LTE data, 0 accounts. Already device owner with the 2026-10-26 app; updated with `install -r`. Passed: lock, restrictions, 7-tap (5/5; 6 taps and wrong PIN rejected), menu, Change Wi-Fi panel and return, Mobile Data OFF/ON via the Settings panel (system value 0/1, strip and menu followed, internet really unreachable while OFF and back after ON), YOKOHAMA site loaded over SIM data, other-apps block, reboot (network validates ~1 min after boot; ping fails until then). No Wi-Fi saved; internet is SIM-only |
+| 14 | 2026-10-31 | vivo V2556 | 16 (API 36) | 10BG7A1LH2003GH | Same unit as #8 (Android ID 67687f428fd9b724), no SIM, no network. Was device owner but **kiosk mode was OFF** (home = vivo launcher, no restrictions); `install -r` left it off, so it was started from admin menu → Start kiosk mode. Then passed: lock, restrictions, permissions, 7-tap (9/9; 6 taps, status-bar zone, wrong PIN rejected), Change Wi-Fi (`VivoWifiSettingsActivity`, Back returns locked), Mobile Data row ("No SIM card inserted"), other-apps and edge/side-panel swipes, reboot. Wi-Fi join and Mobile Data with a SIM not tested |
 
 Tablets #4 and #5 were updated with the status-strip APK on 2026-10-26 (`adb install -r`). Other tablets need the same update. Through a USB hub, `adb devices -l` lists only Android devices; use `ioreg -p IOUSB -w0` to tell a tablet from other hub devices (e.g. a LAN adapter).

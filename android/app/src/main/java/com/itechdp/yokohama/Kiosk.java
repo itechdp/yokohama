@@ -102,18 +102,29 @@ final class Kiosk {
     /**
      * Android gives no app (not even a device owner) a way to flip mobile data itself, so this opens
      * the system's own mobile data screen inside the same temporary Settings window as Wi-Fi.
-     * Android 10-13 get the small internet panel (has the Mobile data switch); newer versions get
-     * the full Network & internet screen. Returns false when the tablet has no such screen.
+     *
+     * <p>The screen must show both the SIM and the data switch. {@code ACTION_DATA_ROAMING_SETTINGS}
+     * resolves to {@code Settings$MobileNetworkActivity}, which on some OEMs (vivo) lists the SIM but
+     * has no way to turn data on or off. The OEM "Mobile network" page (vivo: {@code
+     * com.android.phone/.MobileNetworkSettings}) also answers that action, but at a lower priority,
+     * so it is targeted directly first; it keeps the SIM and its "Data network" switch visible however
+     * data is toggled. Next comes the internet panel (has the switch, no SIM), then the full settings
+     * screens. Returns false when the tablet has none of these screens.
      */
     static boolean openMobileData(Activity activity) {
-        Intent data = new Intent(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                && Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE
-            ? Settings.Panel.ACTION_INTERNET_CONNECTIVITY
-            : Settings.ACTION_DATA_ROAMING_SETTINGS);
-        if (activity.getPackageManager().resolveActivity(data, 0) == null) {
-            data = new Intent(Settings.ACTION_WIRELESS_SETTINGS);
+        Intent[] candidates = {
+            new Intent("com.android.phone.MobileNetworkSettings"),
+            new Intent("vivo.settings.mobile_network_settings"),
+            new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY),
+            new Intent(Settings.ACTION_WIRELESS_SETTINGS),
+            new Intent(Settings.ACTION_DATA_ROAMING_SETTINGS),
+        };
+        for (Intent candidate : candidates) {
+            if (activity.getPackageManager().resolveActivity(candidate, 0) != null) {
+                return openSettingsWindow(activity, candidate);
+            }
         }
-        return openSettingsWindow(activity, data);
+        return false;
     }
 
     private static boolean openSettingsWindow(Activity activity, Intent wifi) {

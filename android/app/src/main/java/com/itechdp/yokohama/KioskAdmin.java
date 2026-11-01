@@ -22,7 +22,8 @@ final class KioskAdmin {
     private static final String ADMIN_PIN = "3007";
 
     private static final int SECRET_TAPS = 7;
-    private static final long SECRET_WINDOW_MS = 3000;
+    /** Generous enough for a human tapping deliberately (7 taps at ~0.5 s each already spans 3 s). */
+    private static final long SECRET_WINDOW_MS = 4000;
     private static final int CORNER_DP = 120;
 
     private final Activity activity;
@@ -37,7 +38,7 @@ final class KioskAdmin {
 
     /**
      * Watches touches without consuming them, so the app underneath still works normally.
-     * Opens the PIN screen when 7 corner taps fall inside any 3-second span: the window slides, so
+     * Opens the PIN screen when 7 corner taps fall inside any 4-second span: the window slides, so
      * one slow tap does not restart the count. Taps elsewhere are ignored (not counted, not
      * resetting).
      */
@@ -111,7 +112,10 @@ final class KioskAdmin {
                 if (which == 0) {
                     Kiosk.openWifi(activity);
                 } else if (which == 1) {
-                    if (!Kiosk.openMobileData(activity)) {
+                    // With no SIM the system's mobile network screen closes at once, which looks like a dead tap.
+                    if (MobileData.read(activity).level == MobileData.Level.NO_SIM) {
+                        Toast.makeText(activity, "No SIM card inserted", Toast.LENGTH_SHORT).show();
+                    } else if (!Kiosk.openMobileData(activity)) {
                         Toast.makeText(activity, "Mobile data settings not available", Toast.LENGTH_SHORT).show();
                     }
                 } else if (locked) {
