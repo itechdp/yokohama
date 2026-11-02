@@ -64,13 +64,12 @@ export default function BlockTyreDetail() {
     if (!target || unblocking) return;
     setUnblocking(true);
     setFormError(null);
-    const by = user?.username ?? "";
     if (target === "all") {
-      const { count, error } = await unblockPlanBlockTires(planNo, by);
+      const { count, error } = await unblockPlanBlockTires(planNo);
       if (error) setFormError(`Could not unblock: ${error}`);
       else setSuccess(`${count} tyre record${count === 1 ? "" : "s"} unblocked for plan ${planNo}.`);
     } else {
-      const { error } = await unblockPlanBlockTire(target.id, by);
+      const { error } = await unblockPlanBlockTire(target.id);
       if (error) setFormError(`Could not unblock: ${error}`);
       else setSuccess(`${target.material} unblocked for plan ${planNo}.`);
     }

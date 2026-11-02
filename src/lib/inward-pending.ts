@@ -139,7 +139,8 @@ export async function cancelPending(
   userId: string | undefined,
 ): Promise<{ error: string | null }> {
   if (!userId) return { error: "You are not logged in. Log in again and retry." };
-  const { error } = await supabase.rpc("cancel_pending_pallet", { p_pallet_id: palletId, p_user_id: userId });
+  // WHO comes from the signed-in session (and needs the Putaway module); userId is only a guard.
+  const { error } = await supabase.rpc("app_cancel_pending_pallet", { p_pallet_id: palletId });
   if (error) {
     console.warn("cancel_pending_pallet failed:", error.message);
     return { error: error.message.replace(/^cancel: /, "") };

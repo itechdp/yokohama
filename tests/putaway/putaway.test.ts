@@ -2,7 +2,7 @@
 // Run with: npm run test:putaway
 // The database functions are MODELLED by fake-supabase.ts; these tests check the
 // app's behaviour against that model. The SQL itself is tested by tests/sql.
-import { db, rpcFailAt, rpcCalls, failures, hooks, reset, snapshot } from "./fake-supabase";
+import { db, rpcFailAt, rpcCalls, failures, hooks, reset, snapshot, session } from "./fake-supabase";
 import { insertPending, fetchPendingPutaways, cancelPending, makeSubmissionTracker, findPossibleDuplicates } from "@/lib/inward-pending";
 import { putAwayPallet, PUTAWAY_RECEIPT_PREFIX } from "@/lib/inward-putaway";
 import { fetchInwardReceipts } from "@/lib/inward-receipts";
@@ -14,6 +14,7 @@ const newPallet = (id: string, over: any = {}) => ({ id, material: "M1", descrip
 const seed = async () => {
   reset();
   db.users.push({ id: U, username: "forklift1", role: "operator" });
+  session.userId = U;
   db.warehouses.push(
     { key: "wh1", label: "WH-1", prefix: "A", column_row_counts: [3, 3] },
     { key: "wh2", label: "WH-2", prefix: "B", column_row_counts: [3] },
@@ -99,7 +100,8 @@ const status = (id: string) => db.inward_pending.find((r) => r.id === id)?.statu
     ["wh1", "A1-1", "non-canonical code"], ["wh1", "", "empty bin"], ["nope", "A01-01", "unknown warehouse"], ["wh1", "A01-01-X3", "old stand suffix"]] as const) {
     r = await putAwayPallet("a", wh, bin, U); ok(!!r.error && snapshot() === clean, `rejected, nothing changed: ${why}`);
   }
-  r = await putAwayPallet("a", "wh1", "A01-01", "someone-else"); ok(!!r.error && snapshot() === clean, "unknown user rejected, nothing changed");
+  session.userId = "someone-else"; r = await putAwayPallet("a", "wh1", "A01-01", U); session.userId = U;
+  ok(!!r.error && snapshot() === clean, "a session that is not a known user is rejected by the server, nothing changed");
   const calls = rpcCalls.length; r = await putAwayPallet("a", "wh1", "A01-01", undefined);
   ok(!!r.error && rpcCalls.length === calls && snapshot() === clean, "not logged in: refused before calling the server");
   r = await putAwayPallet("zzz", "wh1", "A01-01", U); ok(!!r.error && snapshot() === clean, "unknown pallet rejected");

@@ -1,6 +1,6 @@
-import { Link } from "react-router";
-import { ArrowUpRight, LogOut, Moon, Sun } from "lucide-react";
-import { FEATURE_ITEMS } from "@/lib/nav-items";
+import { Link, useLocation } from "react-router";
+import { ArrowUpRight, KeyRound, LogOut, Moon, Sun } from "lucide-react";
+import { isSuperAdmin, visibleNavItems } from "@/lib/route-access";
 import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -9,8 +9,11 @@ const HERO_IMAGE_URL = "https://images.unsplash.com/photo-1578844251758-2f71da64
 
 export default function Home() {
   const { theme, toggleTheme } = useTheme();
-  const { user, logout } = useAuth();
-  const items = FEATURE_ITEMS.filter((item) => !item.adminOnly || user?.role === "admin");
+  const { user, logout, can } = useAuth();
+  const location = useLocation();
+  const noAccess = Boolean((location.state as { noAccess?: boolean } | null)?.noAccess);
+  // Operators only see the modules they were given; Admins and the Super Admin see everything.
+  const items = visibleNavItems(user);
 
   return (
     <div className="min-h-full bg-primary-soft">
@@ -33,9 +36,19 @@ export default function Home() {
             >
               {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
             </button>
+            {isSuperAdmin(user) && (
+              <Link
+                to="/account/password"
+                aria-label="Change password"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-full bg-[rgba(0,0,0,0.3)] px-3.5 text-sm font-medium text-white backdrop-blur-sm transition-transform active:scale-95"
+              >
+                <KeyRound className="size-5" />
+                Password
+              </Link>
+            )}
             <button
               type="button"
-              onClick={logout}
+              onClick={() => void logout()}
               aria-label="Log out"
               className="flex h-10 items-center justify-center gap-1.5 rounded-full bg-[rgba(0,0,0,0.3)] px-3.5 text-sm font-medium text-white backdrop-blur-sm transition-transform active:scale-95"
             >
@@ -53,6 +66,16 @@ export default function Home() {
       </div>
 
       <div className="px-6 pb-10 pt-8">
+        {noAccess && (
+          <p className="mb-5 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">
+            You don't have access to that page. Ask an administrator if you need it.
+          </p>
+        )}
+        {items.length === 0 && (
+          <p className="mb-5 rounded-xl bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
+            No modules have been assigned to {user?.username ?? "your account"} yet. Ask an administrator.
+          </p>
+        )}
         <div className="grid grid-cols-4 items-start gap-x-2 gap-y-6">
           {items.map(({ to, label, icon: Icon }) => (
             <Link key={to} to={to} className="flex min-w-0 flex-col items-center gap-2 text-center">
@@ -63,18 +86,20 @@ export default function Home() {
             </Link>
           ))}
 
-          <Link
-            to="/tires/inward"
-            className="col-span-4 flex items-center justify-between gap-3 rounded-full bg-card px-5 py-3 shadow-sm"
-          >
-            <div>
-              <p className="text-sm font-semibold text-foreground">One tap away</p>
-              <p className="text-xs text-muted-foreground">Start an inward or picking move</p>
-            </div>
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <ArrowUpRight className="size-4" />
-            </span>
-          </Link>
+          {can("inward") && (
+            <Link
+              to="/tires/inward"
+              className="col-span-4 flex items-center justify-between gap-3 rounded-full bg-card px-5 py-3 shadow-sm"
+            >
+              <div>
+                <p className="text-sm font-semibold text-foreground">One tap away</p>
+                <p className="text-xs text-muted-foreground">Start an inward or picking move</p>
+              </div>
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                <ArrowUpRight className="size-4" />
+              </span>
+            </Link>
+          )}
         </div>
       </div>
     </div>

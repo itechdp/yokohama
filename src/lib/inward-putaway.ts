@@ -23,11 +23,12 @@ export async function putAwayPallet(
   if (!userId) {
     return { error: "You are not logged in. Log in again and retry. Nothing was saved.", alreadyDone: false, location: null };
   }
-  const { data, error } = await supabase.rpc("putaway_pallet", {
+  // The database takes WHO from the signed-in session and checks the Putaway module;
+  // userId above is only a "must be signed in" guard, it is never sent.
+  const { data, error } = await supabase.rpc("app_putaway_pallet", {
     p_pallet_id: palletId,
     p_warehouse_key: warehouseKey,
     p_bin: bin,
-    p_user_id: userId,
   });
   if (error) {
     console.warn("putaway_pallet failed:", error.message);

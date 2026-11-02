@@ -12,13 +12,15 @@ export const db: Record<string, Row[]> = {};
 export const failures = new Set<string>(); // generic client failures, "table.op"
 export const rpcFailAt = new Set<string>(); // step names inside the modelled functions
 export const rpcCalls: string[] = [];
+// The signed-in session: the database takes WHO from here, not from an argument the browser sends.
+export const session = { userId: null as string | null };
 export const hooks: { dropResponseOnce?: boolean } = {};
 const locks = new Map<string, Promise<void>>();
 const TABLES = ["tires", "warehouses", "users", "inward_pending", "inward_receipts", "tire_history", "placement_logs", "plan_numbers"];
 export const reset = () => {
   for (const k of Object.keys(db)) delete db[k];
   for (const t of TABLES) db[t] = [];
-  failures.clear(); rpcFailAt.clear(); rpcCalls.length = 0; hooks.dropResponseOnce = false; locks.clear();
+  failures.clear(); rpcFailAt.clear(); session.userId = null; rpcCalls.length = 0; hooks.dropResponseOnce = false; locks.clear();
 };
 reset();
 export const snapshot = () => JSON.stringify(db);
@@ -143,7 +145,9 @@ async function cancelPallet(a: { p_pallet_id: string; p_user_id: string }) {
 async function rpc(name: string, args: any) {
   rpcCalls.push(name);
   try {
-    const data = name === "putaway_pallet" ? await putawayPallet(args) : name === "cancel_pending_pallet" ? await cancelPallet(args) : (() => { throw new Error(`unknown function ${name}`); })();
+    const data = name === "app_putaway_pallet" ? await putawayPallet({ ...args, p_user_id: session.userId })
+      : name === "app_cancel_pending_pallet" ? await cancelPallet({ ...args, p_user_id: session.userId })
+      : (() => { throw new Error(`unknown function ${name}`); })();
     if (hooks.dropResponseOnce) { hooks.dropResponseOnce = false; return { data: null, error: { message: "network error (response lost after commit)" } }; }
     return { data, error: null };
   } catch (e: any) {

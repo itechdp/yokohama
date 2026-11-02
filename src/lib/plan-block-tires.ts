@@ -126,8 +126,9 @@ export async function addPlanBlockTire(entry: {
 }
 
 // Unblocks one record (the SKU row on a plan). The record stays in History.
-export async function unblockPlanBlockTire(id: number, by: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.rpc("unblock_plan_tyre", { p_id: id, p_by: by });
+// "Unblocked by" is the signed-in user, recorded by the database, not a name sent from here.
+export async function unblockPlanBlockTire(id: number): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc("app_unblock_plan_tyre", { p_id: id });
   if (error) {
     console.warn("unblock_plan_tyre failed:", error.message);
     return { error: error.message.replace(/^unblock: /, "") };
@@ -136,8 +137,8 @@ export async function unblockPlanBlockTire(id: number, by: string): Promise<{ er
 }
 
 // Unblocks every still-blocked record of a plan. Returns how many were unblocked.
-export async function unblockPlanBlockTires(planNo: string, by: string): Promise<{ count: number; error: string | null }> {
-  const { data, error } = await supabase.rpc("unblock_plan_tyres", { p_plan_no: planNo.trim(), p_by: by });
+export async function unblockPlanBlockTires(planNo: string): Promise<{ count: number; error: string | null }> {
+  const { data, error } = await supabase.rpc("app_unblock_plan_tyres", { p_plan_no: planNo.trim() });
   if (error) {
     console.warn("unblock_plan_tyres failed:", error.message);
     return { count: 0, error: error.message.replace(/^unblock: /, "") };

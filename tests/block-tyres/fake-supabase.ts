@@ -6,13 +6,14 @@
 // text, unblock only through the two functions); the SQL
 // itself is tested in tests/sql.
 type Row = Record<string, any>;
-export const state = { rows: [] as Row[], nextId: 1, now: () => new Date().toISOString(), failSelect: null as string | null, failRpc: null as string | null };
+export const state = { rows: [] as Row[], nextId: 1, now: () => new Date().toISOString(), failSelect: null as string | null, failRpc: null as string | null, sessionUser: "tester" };
 export function reset() {
   state.rows = [];
   state.nextId = 1;
   state.now = () => new Date().toISOString();
   state.failSelect = null;
   state.failRpc = null;
+  state.sessionUser = "tester";
 }
 const norm = (v: string) => v.trim().toLowerCase();
 
@@ -65,18 +66,18 @@ function table(name: string) {
 }
 function rpc(name: string, args: Row) {
   if (state.failRpc) return Promise.resolve({ data: null, error: { message: state.failRpc } });
-  if (name === "unblock_plan_tyre") {
+  if (name === "app_unblock_plan_tyre") {
     const row = state.rows.find((r) => r.id === args.p_id);
     if (!row) return Promise.resolve({ data: null, error: { message: "unblock: record not found" } });
     if (row.unblocked_at) return Promise.resolve({ data: { result: "already_unblocked" }, error: null });
     row.unblocked_at = state.now();
-    row.unblocked_by = (args.p_by ?? "").trim();
+    row.unblocked_by = state.sessionUser; // recorded from the signed-in session, not sent by the browser
     return Promise.resolve({ data: { result: "unblocked" }, error: null });
   }
-  if (name === "unblock_plan_tyres") {
+  if (name === "app_unblock_plan_tyres") {
     if (!String(args.p_plan_no ?? "").trim()) return Promise.resolve({ data: null, error: { message: "unblock: plan number is required" } });
     let n = 0;
-    for (const r of state.rows) if (!r.unblocked_at && norm(r.plan_no) === norm(args.p_plan_no)) { r.unblocked_at = state.now(); r.unblocked_by = (args.p_by ?? "").trim(); n++; }
+    for (const r of state.rows) if (!r.unblocked_at && norm(r.plan_no) === norm(args.p_plan_no)) { r.unblocked_at = state.now(); r.unblocked_by = state.sessionUser; n++; }
     return Promise.resolve({ data: n, error: null });
   }
   return Promise.resolve({ data: null, error: { message: "unknown function " + name } });
