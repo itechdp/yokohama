@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Crown Pvt. Ltd.',
   webDir: 'dist',
   server: {
-    url: 'https://yokohama-rho.vercel.app',
+    url: 'https://crown-pvt-ltd.vercel.app',
     cleartext: false
   }
 };
