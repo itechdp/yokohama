@@ -1,4 +1,4 @@
-This is a Vite + React + TypeScripts project, styled with Tailwind CSS v4 and routed with React Routers. ok
+This is a Vite + React + TypeScripts project, styled with Tailwind CSS v4 and routed with React Routers. 
 
 ## Getting Started
 
