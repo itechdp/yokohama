@@ -12,6 +12,7 @@ import SelectMenu from "@/components/select-menu";
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import RequiredMark from "@/components/required-mark";
+import { SHIFT_OPTIONS } from "@/lib/shift";
 import { useAuth } from "@/contexts/auth-context";
 import { useSelectedCase } from "@/hooks/use-selected-case";
 import { locationForBin, type WarehouseDef } from "@/data/warehouse-bins";
@@ -48,12 +49,6 @@ interface InwardEntry {
   bins: string[];
   caseNo: CaseNo;
 }
-
-const SHIFT_OPTIONS = [
-  { value: "1", label: "Shift 1" },
-  { value: "2", label: "Shift 2" },
-  { value: "3", label: "Shift 3" },
-];
 
 // Today as YYYY-MM-DD in local time - stamped on a pending pallet when it is saved.
 function todayKey(): string {
@@ -583,7 +578,7 @@ export default function TireInward() {
             <PlanNoPicker value={planNo} onChange={handlePlanNoChange} kind="inward" />
           </label>
           <label className="block min-w-0 space-y-1.5">
-            <span className="text-sm font-medium text-foreground">Shift<RequiredMark /></span>
+            <span className="text-sm font-medium text-foreground">Shift</span>
             <SelectMenu value={shift} placeholder="Select shift" options={SHIFT_OPTIONS} onChange={setShift} />
           </label>
         </div>

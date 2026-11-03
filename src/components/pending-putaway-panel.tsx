@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/auth-context";
 import type { WarehouseDef } from "@/data/warehouse-bins";
 import { cancelPending, fetchPendingPutaways } from "@/lib/inward-pending";
 import { putAwayPallet } from "@/lib/inward-putaway";
+import { shiftLabel } from "@/lib/shift";
 import type { CaseNo, PendingPutaway } from "@/types/tire";
 
 // The body of the Putaway page (/tires/putaway) - the forklift employee's side.
@@ -202,7 +203,7 @@ export default function PendingPutawayPanel({
                       {p.caseNo ? "" : " · No case (saved before cases)"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Sheet {p.planNo} · {p.entryDate.split("-").reverse().join("/")} · Shift {p.shift}
+                      Sheet {p.planNo} · {p.entryDate.split("-").reverse().join("/")} · {shiftLabel(p.shift)}
                       {p.pickerName ? ` · ${p.pickerName}` : ""}
                     </p>
                   </button>

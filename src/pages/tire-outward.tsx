@@ -8,6 +8,7 @@ import StockLocationList, { buildStockCards, qtyToTake, type StockCard } from "@
 import SuccessOverlay from "@/components/success-overlay";
 import TireCatalogSearch from "@/components/tire-catalog-search";
 import RequiredMark from "@/components/required-mark";
+import { shiftLabel, withCurrentShift } from "@/lib/shift";
 import type { WarehouseDef } from "@/data/warehouse-bins";
 import { useStockLocations } from "@/hooks/use-stock-locations";
 import { fetchOngoingOutwardPlans, insertOutwards, type OngoingOutwardPlan } from "@/lib/outwards";
@@ -32,12 +33,6 @@ interface SelectedTire {
   brand?: string;
   plyRatingBottom?: string;
 }
-
-const SHIFT_OPTIONS = [
-  { value: "1", label: "Shift 1" },
-  { value: "2", label: "Shift 2" },
-  { value: "3", label: "Shift 3" },
-];
 
 export default function TireOutward() {
   const [warehouses, setWarehouses] = useState<WarehouseDef[]>([]);
@@ -67,7 +62,7 @@ export default function TireOutward() {
       const used = ongoingPlans.find((o) => o.planNo === p.planNo);
       return {
         value: p.planNo,
-        label: [p.planNo, "Prepared", `${p.lines.length} tire${p.lines.length === 1 ? "" : "s"}`, used?.shift && `Shift ${used.shift}`]
+        label: [p.planNo, "Prepared", `${p.lines.length} tire${p.lines.length === 1 ? "" : "s"}`, used?.shift && shiftLabel(used.shift)]
           .filter(Boolean)
           .join(" · "),
       };
@@ -76,7 +71,7 @@ export default function TireOutward() {
       .filter((o) => !preparedPlans.some((p) => p.planNo === o.planNo))
       .map((o) => ({
         value: o.planNo,
-        label: [o.planNo, o.pickerName, o.shift && `Shift ${o.shift}`].filter(Boolean).join(" · "),
+        label: [o.planNo, o.pickerName, o.shift && shiftLabel(o.shift)].filter(Boolean).join(" · "),
       })),
   ];
   const selectOngoingPlan = (value: string) => {
@@ -252,8 +247,8 @@ export default function TireOutward() {
             />
           </label>
           <label className="block min-w-0 space-y-1.5">
-            <span className="text-sm font-medium text-foreground">Shift<RequiredMark /></span>
-            <SelectMenu value={shift} placeholder="Select shift" options={SHIFT_OPTIONS} onChange={setShift} />
+            <span className="text-sm font-medium text-foreground">Shift</span>
+            <SelectMenu value={shift} placeholder="Select shift" options={withCurrentShift(shift)} onChange={setShift} />
           </label>
         </div>
         <label className="block space-y-1.5">
